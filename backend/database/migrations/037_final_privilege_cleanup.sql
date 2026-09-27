@@ -112,3 +112,26 @@ in schema public
 revoke all
 on sequences
 from anon;
+
+-- =========================================================
+-- FINAL PATCH: HARDEN RATING SUMMARY VIEWS
+-- =========================================================
+
+revoke all
+on table
+  public.accommodation_rating_summary,
+  public.restaurant_rating_summary,
+  public.attraction_rating_summary,
+  public.activity_rating_summary,
+  public.driver_rating_summary
+from anon, authenticated;
+
+
+grant select
+on table
+  public.accommodation_rating_summary,
+  public.restaurant_rating_summary,
+  public.attraction_rating_summary,
+  public.activity_rating_summary,
+  public.driver_rating_summary
+to anon, authenticated;
