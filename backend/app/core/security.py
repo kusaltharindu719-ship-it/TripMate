@@ -21,11 +21,11 @@ class CurrentUser(BaseModel):
     role: str
 
 
-def get_current_user(
+def get_access_token(
     credentials: HTTPAuthorizationCredentials = Depends(
         bearer_scheme
     ),
-) -> CurrentUser:
+) -> str:
 
     if credentials is None:
         raise HTTPException(
@@ -34,14 +34,16 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = credentials.credentials
+    return credentials.credentials
 
-    # -----------------------------------------------------
-    # 1. Verify JWT with Supabase Auth
-    # -----------------------------------------------------
+
+def get_current_user(
+    token: str = Depends(get_access_token),
+) -> CurrentUser:
 
     try:
         supabase = get_public_supabase()
+
         auth_response = supabase.auth.get_user(token)
 
         if auth_response.user is None:
@@ -62,11 +64,6 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # -----------------------------------------------------
-    # 2. Load profile using SAME USER JWT
-    # RLS remains active
-    # -----------------------------------------------------
-
     try:
         response = httpx.get(
             f"{settings.supabase_url}/rest/v1/profiles",
@@ -82,7 +79,6 @@ def get_current_user(
         )
 
         response.raise_for_status()
-
         profiles = response.json()
 
     except Exception:
