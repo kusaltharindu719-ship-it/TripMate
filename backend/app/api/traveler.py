@@ -2063,3 +2063,97 @@ def get_trip_cart(
         "item_count": len(items),
         "items": items,
     }
+# =========================================================
+# REMOVE ITEM FROM TRIP CART
+# =========================================================
+
+@router.delete("/trips/{trip_id}/cart/{cart_item_id}")
+def remove_trip_cart_item(
+    trip_id: int,
+    cart_item_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm the trip belongs to the logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # 2. Confirm cart item belongs to this trip
+    item_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+            "select": "id,item_type,item_name_snapshot",
+        },
+        timeout=10.0,
+    )
+
+    if item_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load cart item",
+        )
+
+    items = item_response.json()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cart item not found",
+        )
+
+    item = items[0]
+
+    # 3. Delete cart item
+    delete_headers = {
+        **user_headers(token),
+        "Prefer": "return=representation",
+    }
+
+    delete_response = httpx.delete(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=delete_headers,
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+        },
+        timeout=10.0,
+    )
+
+    if delete_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to remove cart item",
+        )
+
+    return {
+        "message": "Cart item removed successfully",
+        "removed_item": {
+            "id": item["id"],
+            "item_type": item["item_type"],
+            "item_name": item["item_name_snapshot"],
+        },
+    }
