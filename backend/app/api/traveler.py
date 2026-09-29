@@ -2003,3 +2003,63 @@ def add_room_to_trip_cart(
         "message": "Room added to trip cart successfully",
         "cart_item": created_items[0],
     }
+# =========================================================
+# VIEW TRIP CART
+# =========================================================
+
+@router.get("/trips/{trip_id}/cart")
+def get_trip_cart(
+    trip_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Make sure this trip belongs to the logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id,trip_name,start_date,end_date,status",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # 2. Load cart items
+    cart_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "trip_id": f"eq.{trip_id}",
+            "select": "*",
+            "order": "created_at.asc",
+        },
+        timeout=10.0,
+    )
+
+    if cart_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip cart",
+        )
+
+    items = cart_response.json()
+
+    return {
+        "trip": trips[0],
+        "item_count": len(items),
+        "items": items,
+    }
