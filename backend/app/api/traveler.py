@@ -1,8 +1,9 @@
-from datetime import date
+from datetime import date, timedelta
+from app.core.supabase import get_service_supabase
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, model_validator
 from typing import Any
 from typing import Any, Optional
@@ -684,3 +685,496 @@ def update_trip_destination(
         )
 
     return result[0]
+# =========================================================
+# ACCOMMODATION DISCOVERY
+# =========================================================
+
+
+# =========================================================
+# 10. LIST ACCOMMODATIONS
+# =========================================================
+
+@router.get("/accommodations")
+def get_accommodations(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(
+        require_roles("traveler")
+    ),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/accommodations",
+        headers=user_headers(token),
+        params={
+            "is_active": "eq.true",
+            "select": (
+                "id,accommodation_type_id,name,description,"
+                "address,latitude,longitude,"
+                "phone,email,website_url,"
+                "check_in_time,check_out_time,"
+                "star_rating"
+            ),
+            "order": "name.asc",
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load accommodations",
+        )
+
+    accommodations = response.json()
+
+    # Add images for each accommodation
+    for accommodation in accommodations:
+        image_response = httpx.get(
+            f"{settings.supabase_url}/rest/v1/accommodation_images",
+            headers=user_headers(token),
+            params={
+                "accommodation_id": f"eq.{accommodation['id']}",
+                "select": (
+                    "id,image_url,image_type,display_order"
+                ),
+                "order": "display_order.asc",
+            },
+            timeout=10.0,
+        )
+
+        accommodation["images"] = (
+            image_response.json()
+            if image_response.status_code < 400
+            else []
+        )
+
+    return accommodations
+
+
+# =========================================================
+# 11. ACCOMMODATION DETAILS
+# =========================================================
+
+@router.get("/accommodations/{accommodation_id}")
+def get_accommodation_details(
+    accommodation_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(
+        require_roles("traveler")
+    ),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/accommodations",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{accommodation_id}",
+            "is_active": "eq.true",
+            "select": (
+                "id,accommodation_type_id,name,description,"
+                "address,latitude,longitude,"
+                "phone,email,website_url,"
+                "check_in_time,check_out_time,"
+                "star_rating,created_at,updated_at"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load accommodation",
+        )
+
+    result = response.json()
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Accommodation not found",
+        )
+
+    accommodation = result[0]
+
+    image_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/accommodation_images",
+        headers=user_headers(token),
+        params={
+            "accommodation_id": f"eq.{accommodation_id}",
+            "select": (
+                "id,image_url,image_type,display_order"
+            ),
+            "order": "display_order.asc",
+        },
+        timeout=10.0,
+    )
+
+    accommodation["images"] = (
+        image_response.json()
+        if image_response.status_code < 400
+        else []
+    )
+
+    return accommodation
+
+
+# =========================================================
+# 12. LIST ROOMS FOR ACCOMMODATION
+# =========================================================
+
+@router.get("/accommodations/{accommodation_id}/rooms")
+def get_accommodation_rooms(
+    accommodation_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(
+        require_roles("traveler")
+    ),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/room_types",
+        headers=user_headers(token),
+        params={
+            "accommodation_id": f"eq.{accommodation_id}",
+            "is_active": "eq.true",
+            "select": (
+                "id,accommodation_id,name,description,"
+                "max_adults,max_children,max_guests,"
+                "room_size_square_meters,"
+                "base_price_per_night,currency,"
+                "total_rooms"
+            ),
+            "order": "base_price_per_night.asc",
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load rooms",
+        )
+
+    rooms = response.json()
+
+    for room in rooms:
+        image_response = httpx.get(
+            f"{settings.supabase_url}/rest/v1/room_images",
+            headers=user_headers(token),
+            params={
+                "room_type_id": f"eq.{room['id']}",
+                "select": (
+                    "id,image_url,display_order"
+                ),
+                "order": "display_order.asc",
+            },
+            timeout=10.0,
+        )
+
+        room["images"] = (
+            image_response.json()
+            if image_response.status_code < 400
+            else []
+        )
+
+    return rooms
+
+# =========================================================
+# ROOM AVAILABILITY
+# =========================================================
+
+@router.get("/rooms/{room_id}/availability")
+def get_room_availability(
+    room_id: int,
+
+    check_in: date = Query(...),
+    check_out: date = Query(...),
+
+    rooms_requested: int = Query(
+        default=1,
+        ge=1,
+    ),
+
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(
+        require_roles("traveler")
+    ),
+):
+    # -----------------------------------------------------
+    # 1. Validate dates
+    # -----------------------------------------------------
+
+    if check_out <= check_in:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-out date must be after check-in date",
+        )
+
+    nights = (check_out - check_in).days
+
+
+    # -----------------------------------------------------
+    # 2. Load room
+    # -----------------------------------------------------
+
+    room_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/room_types",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{room_id}",
+            "is_active": "eq.true",
+            "select": (
+                "id,accommodation_id,name,"
+                "base_price_per_night,currency,"
+                "total_rooms,max_adults,"
+                "max_children,max_guests"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if room_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load room",
+        )
+
+    rooms = room_response.json()
+
+    if not rooms:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found",
+        )
+
+    room = rooms[0]
+
+
+    # -----------------------------------------------------
+    # 3. Load configured availability
+    # -----------------------------------------------------
+
+    availability_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/room_availability",
+        headers=user_headers(token),
+        params=[
+            ("room_type_id", f"eq.{room_id}"),
+            ("date", f"gte.{check_in.isoformat()}"),
+            ("date", f"lt.{check_out.isoformat()}"),
+            (
+                "select",
+                (
+                    "id,date,available_rooms,"
+                    "price_override,"
+                    "minimum_stay_nights,is_closed"
+                ),
+            ),
+            ("order", "date.asc"),
+        ],
+        timeout=10.0,
+    )
+
+    if availability_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load room availability",
+        )
+
+    availability = availability_response.json()
+
+
+    # -----------------------------------------------------
+    # 4. Load ACTIVE reservations
+    #
+    # We use trusted backend access ONLY to aggregate
+    # reserved inventory. Raw reservation data is not
+    # returned to the traveler.
+    # -----------------------------------------------------
+
+    service_db = get_service_supabase()
+
+    reservation_response = (
+        service_db
+        .table("room_inventory_reservations")
+        .select("stay_date,rooms_reserved")
+        .eq("room_type_id", room_id)
+        .eq("status", "reserved")
+        .gte("stay_date", check_in.isoformat())
+        .lt("stay_date", check_out.isoformat())
+        .execute()
+    )
+
+    reserved_by_date = {}
+
+    for reservation in reservation_response.data:
+        stay_date = reservation["stay_date"]
+
+        reserved_by_date[stay_date] = (
+            reserved_by_date.get(stay_date, 0)
+            + reservation["rooms_reserved"]
+        )
+
+
+    # -----------------------------------------------------
+    # 5. Detect missing availability dates
+    # -----------------------------------------------------
+
+    expected_dates = {
+        (check_in + timedelta(days=i)).isoformat()
+        for i in range(nights)
+    }
+
+    configured_dates = {
+        day["date"]
+        for day in availability
+    }
+
+    missing_dates = sorted(
+        expected_dates - configured_dates
+    )
+
+
+    # -----------------------------------------------------
+    # 6. Calculate real availability + price
+    # -----------------------------------------------------
+
+    detailed_availability = []
+
+    estimated_total = 0
+
+    all_dates_available = (
+        len(missing_dates) == 0
+    )
+
+    minimum_rooms_remaining = None
+
+    required_minimum_stay = 1
+
+
+    for day in availability:
+
+        configured_rooms = day["available_rooms"]
+
+        reserved_rooms = reserved_by_date.get(
+            day["date"],
+            0,
+        )
+
+        remaining_rooms = max(
+            configured_rooms - reserved_rooms,
+            0,
+        )
+
+        effective_price = (
+            day["price_override"]
+            if day["price_override"] is not None
+            else room["base_price_per_night"]
+        )
+
+        minimum_stay = (
+            day["minimum_stay_nights"]
+            or 1
+        )
+
+        required_minimum_stay = max(
+            required_minimum_stay,
+            minimum_stay,
+        )
+
+        date_available = (
+            not day["is_closed"]
+            and remaining_rooms >= rooms_requested
+        )
+
+        if not date_available:
+            all_dates_available = False
+
+        if minimum_rooms_remaining is None:
+            minimum_rooms_remaining = remaining_rooms
+        else:
+            minimum_rooms_remaining = min(
+                minimum_rooms_remaining,
+                remaining_rooms,
+            )
+
+        estimated_total += (
+            effective_price
+            * rooms_requested
+        )
+
+        detailed_availability.append(
+            {
+                "date": day["date"],
+
+                "configured_rooms":
+                    configured_rooms,
+
+                "reserved_rooms":
+                    reserved_rooms,
+
+                "remaining_rooms":
+                    remaining_rooms,
+
+                "rooms_requested":
+                    rooms_requested,
+
+                "is_closed":
+                    day["is_closed"],
+
+                "minimum_stay_nights":
+                    minimum_stay,
+
+                "effective_price":
+                    effective_price,
+
+                "available":
+                    date_available,
+            }
+        )
+
+
+    # -----------------------------------------------------
+    # 7. Minimum-stay validation
+    # -----------------------------------------------------
+
+    minimum_stay_valid = (
+        nights >= required_minimum_stay
+    )
+
+    if not minimum_stay_valid:
+        all_dates_available = False
+
+
+    # -----------------------------------------------------
+    # 8. Final response
+    # -----------------------------------------------------
+
+    return {
+        "room": room,
+
+        "check_in": check_in,
+        "check_out": check_out,
+
+        "nights": nights,
+        "rooms_requested": rooms_requested,
+
+        "available": all_dates_available,
+
+        "missing_dates": missing_dates,
+
+        "minimum_stay_required":
+            required_minimum_stay,
+
+        "minimum_stay_valid":
+            minimum_stay_valid,
+
+        "minimum_rooms_remaining":
+            minimum_rooms_remaining,
+
+        "estimated_total":
+            estimated_total,
+
+        "currency":
+            room["currency"],
+
+        "availability":
+            detailed_availability,
+    }
