@@ -264,6 +264,15 @@ class RoomCartCreate(BaseModel):
     accommodation_meal_plan_id: int | None = None
     notes: str | None = None
 
+class RoomCartUpdate(BaseModel):
+    check_in_date: date | None = None
+    check_out_date: date | None = None
+    rooms_requested: int | None = None
+    adult_count: int | None = None
+    child_count: int | None = None
+    accommodation_meal_plan_id: int | None = None
+    notes: str | None = None
+
 
 # =========================================================
 # 3. GET MY TRIPS
@@ -2156,4 +2165,420 @@ def remove_trip_cart_item(
             "item_type": item["item_type"],
             "item_name": item["item_name_snapshot"],
         },
+    }
+
+# =========================================================
+# UPDATE ROOM CART ITEM
+# =========================================================
+
+@router.patch("/trips/{trip_id}/cart/{cart_item_id}")
+def update_room_cart_item(
+    trip_id: int,
+    cart_item_id: int,
+    payload: RoomCartUpdate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm trip belongs to logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id,start_date,end_date,status",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    trip = trips[0]
+
+    # 2. Load current room cart item
+    item_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+            "item_type": "eq.room",
+            "select": (
+                "id,trip_id,item_type,room_type_id,"
+                "quantity,check_in_date,check_out_date,"
+                "selection_details,"
+                "accommodation_meal_plan_id,notes"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if item_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load cart item",
+        )
+
+    items = item_response.json()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room cart item not found",
+        )
+
+    current = items[0]
+
+    selection_details = current.get("selection_details") or {}
+
+    # 3. Merge old values with supplied update values
+    fields_set = payload.model_fields_set
+
+    check_in_date = (
+        payload.check_in_date
+        if "check_in_date" in fields_set
+        else date.fromisoformat(current["check_in_date"])
+    )
+
+    check_out_date = (
+        payload.check_out_date
+        if "check_out_date" in fields_set
+        else date.fromisoformat(current["check_out_date"])
+    )
+
+    rooms_requested = (
+        payload.rooms_requested
+        if "rooms_requested" in fields_set
+        else current["quantity"]
+    )
+
+    adult_count = (
+        payload.adult_count
+        if "adult_count" in fields_set
+        else selection_details.get("adult_count", 0)
+    )
+
+    child_count = (
+        payload.child_count
+        if "child_count" in fields_set
+        else selection_details.get("child_count", 0)
+    )
+
+    meal_plan_id = (
+        payload.accommodation_meal_plan_id
+        if "accommodation_meal_plan_id" in fields_set
+        else current["accommodation_meal_plan_id"]
+    )
+
+    notes = (
+        payload.notes
+        if "notes" in fields_set
+        else current["notes"]
+    )
+
+    # Required values cannot be explicitly changed to null
+    if check_in_date is None or check_out_date is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-in and check-out dates are required",
+        )
+
+    if rooms_requested is None or rooms_requested <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one room must be requested",
+        )
+
+    if adult_count is None or child_count is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Adult and child counts are required",
+        )
+
+    if adult_count < 0 or child_count < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Guest counts cannot be negative",
+        )
+
+    if adult_count + child_count <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one guest is required",
+        )
+
+    if check_out_date <= check_in_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-out date must be after check-in date",
+        )
+
+    # 4. Validate dates against trip
+    trip_start = date.fromisoformat(trip["start_date"])
+    trip_end = date.fromisoformat(trip["end_date"])
+
+    if check_in_date < trip_start or check_out_date > trip_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Room dates must be within trip dates",
+        )
+
+    # 5. Load room
+    room_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/room_types",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{current['room_type_id']}",
+            "is_active": "eq.true",
+            "select": (
+                "id,accommodation_id,name,"
+                "max_adults,max_children,max_guests"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if room_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load room",
+        )
+
+    rooms = room_response.json()
+
+    if not rooms:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found or unavailable",
+        )
+
+    room = rooms[0]
+
+    # 6. Capacity validation
+    if adult_count > (room["max_adults"] or 0) * rooms_requested:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Adult count exceeds room capacity",
+        )
+
+    if child_count > (room["max_children"] or 0) * rooms_requested:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Child count exceeds room capacity",
+        )
+
+    if (
+        adult_count + child_count
+        > (room["max_guests"] or 0) * rooms_requested
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Total guest count exceeds room capacity",
+        )
+
+    # 7. Load availability for new/current dates
+    nights = (check_out_date - check_in_date).days
+
+    availability_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/room_availability",
+        headers=user_headers(token),
+        params=[
+            ("room_type_id", f"eq.{current['room_type_id']}"),
+            ("date", f"gte.{check_in_date.isoformat()}"),
+            ("date", f"lt.{check_out_date.isoformat()}"),
+            (
+                "select",
+                "date,available_rooms,minimum_stay_nights,is_closed",
+            ),
+            ("order", "date.asc"),
+        ],
+        timeout=10.0,
+    )
+
+    if availability_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to check room availability",
+        )
+
+    availability = availability_response.json()
+
+    expected_dates = {
+        (check_in_date + timedelta(days=i)).isoformat()
+        for i in range(nights)
+    }
+
+    configured_dates = {
+        day["date"]
+        for day in availability
+    }
+
+    missing_dates = sorted(expected_dates - configured_dates)
+
+    if missing_dates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "Room availability is not configured for all requested nights",
+                "missing_dates": missing_dates,
+            },
+        )
+
+    # 8. Check already reserved inventory
+    service_db = get_service_supabase()
+
+    reservation_response = (
+        service_db
+        .table("room_inventory_reservations")
+        .select("stay_date,rooms_reserved")
+        .eq("room_type_id", current["room_type_id"])
+        .eq("status", "reserved")
+        .gte("stay_date", check_in_date.isoformat())
+        .lt("stay_date", check_out_date.isoformat())
+        .execute()
+    )
+
+    reserved_by_date = {}
+
+    for reservation in reservation_response.data:
+        stay_date = reservation["stay_date"]
+
+        reserved_by_date[stay_date] = (
+            reserved_by_date.get(stay_date, 0)
+            + reservation["rooms_reserved"]
+        )
+
+    minimum_stay_required = 1
+
+    for day in availability:
+        if day["is_closed"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Room is closed on {day['date']}",
+            )
+
+        reserved_rooms = reserved_by_date.get(day["date"], 0)
+
+        remaining_rooms = max(
+            day["available_rooms"] - reserved_rooms,
+            0,
+        )
+
+        if remaining_rooms < rooms_requested:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Not enough rooms available on {day['date']}",
+            )
+
+        minimum_stay_required = max(
+            minimum_stay_required,
+            day["minimum_stay_nights"] or 1,
+        )
+
+    if nights < minimum_stay_required:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Minimum stay is {minimum_stay_required} nights",
+        )
+
+    # 9. Validate optional meal plan
+    if meal_plan_id is not None:
+        meal_response = httpx.get(
+            f"{settings.supabase_url}/rest/v1/accommodation_meal_plans",
+            headers=user_headers(token),
+            params={
+                "id": f"eq.{meal_plan_id}",
+                "is_available": "eq.true",
+                "select": "id,accommodation_id",
+            },
+            timeout=10.0,
+        )
+
+        if meal_response.status_code >= 400:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Unable to load meal plan",
+            )
+
+        meal_plans = meal_response.json()
+
+        if not meal_plans:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Meal plan not found or unavailable",
+            )
+
+        if meal_plans[0]["accommodation_id"] != room["accommodation_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Meal plan must belong to the same accommodation",
+            )
+
+    # 10. Update cart item
+    update_data = {
+        "quantity": rooms_requested,
+        "check_in_date": check_in_date.isoformat(),
+        "check_out_date": check_out_date.isoformat(),
+        "accommodation_meal_plan_id": meal_plan_id,
+        "selection_details": {
+            "adult_count": adult_count,
+            "child_count": child_count,
+        },
+        "notes": notes,
+    }
+
+    update_headers = {
+        **user_headers(token),
+        "Prefer": "return=representation",
+    }
+
+    update_response = httpx.patch(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=update_headers,
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+        },
+        json=update_data,
+        timeout=10.0,
+    )
+
+    if update_response.status_code >= 400:
+        try:
+            error_data = update_response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to update cart item"
+            )
+        except Exception:
+            error_message = "Unable to update cart item"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    updated_items = update_response.json()
+
+    if not updated_items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cart item not found",
+        )
+
+    return {
+        "message": "Room cart item updated successfully",
+        "cart_item": updated_items[0],
     }
