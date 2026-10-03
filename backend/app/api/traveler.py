@@ -277,6 +277,17 @@ class BookingCancellationRequest(BaseModel):
     booking_item_id: int | None = None
     reason: str | None = None
 
+class NotificationPreferencesUpdate(BaseModel):
+    in_app_enabled: bool | None = None
+    email_enabled: bool | None = None
+    push_enabled: bool | None = None
+    booking_updates: bool | None = None
+    driver_bid_updates: bool | None = None
+    verification_updates: bool | None = None
+    review_updates: bool | None = None
+    trip_reminders: bool | None = None
+    service_reminders: bool | None = None
+
 
 # =========================================================
 # 3. GET MY TRIPS
@@ -2904,4 +2915,241 @@ def get_booking_cancellations(
         "booking": bookings[0],
         "cancellation_count": len(cancellations),
         "cancellations": cancellations,
+    }
+
+# =========================================================
+# TRAVELER NOTIFICATIONS
+# =========================================================
+
+@router.get("/notifications")
+def get_traveler_notifications(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/notifications",
+        headers=user_headers(token),
+        params={
+            "select": (
+                "id,notification_type,title,message,"
+                "event_key,related_entity_type,"
+                "related_entity_id,deep_link,data,"
+                "priority,is_read,read_at,"
+                "scheduled_for,sent_at,expires_at,"
+                "created_at"
+            ),
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load notifications",
+        )
+
+    notifications = response.json()
+
+    unread_count = sum(
+        1
+        for notification in notifications
+        if not notification["is_read"]
+    )
+
+    return {
+        "notification_count": len(notifications),
+        "unread_count": unread_count,
+        "notifications": notifications,
+    }
+
+
+# IMPORTANT:
+# Keep this route BEFORE /notifications/{notification_id}/read
+@router.patch("/notifications/read-all")
+def mark_all_traveler_notifications_read(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/mark_all_notifications_read",
+        headers=user_headers(token),
+        json={},
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to mark notifications as read"
+            )
+        except Exception:
+            error_message = "Unable to mark notifications as read"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    updated_count = response.json()
+
+    return {
+        "message": "All notifications marked as read",
+        "updated_count": updated_count,
+    }
+
+
+@router.patch("/notifications/{notification_id}/read")
+def set_traveler_notification_read_state(
+    notification_id: int,
+    is_read: bool = True,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/set_notification_read_state",
+        headers=user_headers(token),
+        json={
+            "p_notification_id": notification_id,
+            "p_is_read": is_read,
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to update notification"
+            )
+        except Exception:
+            error_message = "Unable to update notification"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    notification = response.json()
+
+    if isinstance(notification, list):
+        if not notification:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Notification not found",
+            )
+
+        notification = notification[0]
+
+    return {
+        "message": "Notification read state updated successfully",
+        "notification": notification,
+    }
+
+# =========================================================
+# NOTIFICATION PREFERENCES
+# =========================================================
+
+@router.get("/notification-preferences")
+def get_notification_preferences(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/notification_preferences",
+        headers=user_headers(token),
+        params={
+            "select": (
+                "user_id,in_app_enabled,email_enabled,push_enabled,"
+                "booking_updates,driver_bid_updates,"
+                "verification_updates,review_updates,"
+                "trip_reminders,service_reminders,updated_at"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load notification preferences",
+        )
+
+    preferences = response.json()
+
+    if not preferences:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification preferences not found",
+        )
+
+    return {
+        "preferences": preferences[0],
+    }
+
+
+@router.patch("/notification-preferences")
+def update_notification_preferences(
+    payload: NotificationPreferencesUpdate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    update_data = payload.model_dump(
+        exclude_unset=True,
+        exclude_none=True,
+    )
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No preference changes provided",
+        )
+
+    update_headers = {
+        **user_headers(token),
+        "Prefer": "return=representation",
+    }
+
+    response = httpx.patch(
+    f"{settings.supabase_url}/rest/v1/notification_preferences",
+    headers=update_headers,
+    params={
+        "user_id": f"eq.{user.id}",
+    },
+    json=update_data,
+    timeout=10.0,
+)
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to update notification preferences"
+            )
+        except Exception:
+            error_message = "Unable to update notification preferences"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    preferences = response.json()
+
+    if not preferences:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification preferences not found",
+        )
+
+    return {
+        "message": "Notification preferences updated successfully",
+        "preferences": preferences[0],
     }
