@@ -273,6 +273,10 @@ class RoomCartUpdate(BaseModel):
     accommodation_meal_plan_id: int | None = None
     notes: str | None = None
 
+class BookingCancellationRequest(BaseModel):
+    booking_item_id: int | None = None
+    reason: str | None = None
+
 
 # =========================================================
 # 3. GET MY TRIPS
@@ -2778,4 +2782,59 @@ def get_traveler_booking_details(
         "booking": booking,
         "item_count": len(items),
         "items": items,
+    }
+
+# =========================================================
+# REQUEST BOOKING CANCELLATION
+# =========================================================
+
+@router.post("/bookings/{booking_id}/cancellations")
+def request_booking_cancellation(
+    booking_id: int,
+    payload: BookingCancellationRequest,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/request_booking_cancellation",
+        headers=user_headers(token),
+        json={
+            "p_booking_id": booking_id,
+            "p_booking_item_id": payload.booking_item_id,
+            "p_reason": payload.reason,
+        },
+        timeout=20.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to request booking cancellation"
+            )
+        except Exception:
+            error_message = "Unable to request booking cancellation"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    cancellation = response.json()
+
+    if isinstance(cancellation, list):
+        if not cancellation:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Cancellation request was not returned",
+            )
+
+        cancellation = cancellation[0]
+
+    return {
+        "message": "Booking cancellation requested successfully",
+        "cancellation": cancellation,
     }
