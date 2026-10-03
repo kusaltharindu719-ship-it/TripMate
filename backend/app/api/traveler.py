@@ -2838,3 +2838,70 @@ def request_booking_cancellation(
         "message": "Booking cancellation requested successfully",
         "cancellation": cancellation,
     }
+
+# =========================================================
+# VIEW BOOKING CANCELLATIONS
+# =========================================================
+
+@router.get("/bookings/{booking_id}/cancellations")
+def get_booking_cancellations(
+    booking_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm booking belongs to logged-in traveler
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": "id,booking_reference,status,payment_status",
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    # 2. Load cancellation requests
+    cancellation_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_cancellations",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_id,booking_item_id,"
+                "cancellation_type,reason,status,"
+                "refund_amount,requested_at,"
+                "reviewed_at,processed_at,"
+                "review_notes"
+            ),
+            "order": "requested_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if cancellation_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load cancellation requests",
+        )
+
+    cancellations = cancellation_response.json()
+
+    return {
+        "booking": bookings[0],
+        "cancellation_count": len(cancellations),
+        "cancellations": cancellations,
+    }
