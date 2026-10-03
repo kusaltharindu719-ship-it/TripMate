@@ -2687,3 +2687,95 @@ def checkout_trip_endpoint(
         "message": "Trip checkout completed successfully",
         "booking": booking,
     }
+
+# =========================================================
+# TRAVELER BOOKINGS
+# =========================================================
+
+@router.get("/bookings")
+def get_traveler_bookings(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "select": "*",
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load bookings",
+        )
+
+    bookings = response.json()
+
+    return {
+        "booking_count": len(bookings),
+        "bookings": bookings,
+    }
+
+
+@router.get("/bookings/{booking_id}")
+def get_traveler_booking_details(
+    booking_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Load booking
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": "*",
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    booking = bookings[0]
+
+    # 2. Load booking items
+    items_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_items",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": "*",
+            "order": "created_at.asc",
+        },
+        timeout=10.0,
+    )
+
+    if items_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking items",
+        )
+
+    items = items_response.json()
+
+    return {
+        "booking": booking,
+        "item_count": len(items),
+        "items": items,
+    }
