@@ -288,6 +288,16 @@ class NotificationPreferencesUpdate(BaseModel):
     trip_reminders: bool | None = None
     service_reminders: bool | None = None
 
+class ReviewCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    title: str | None = None
+    comment: str | None = None
+
+
+class ReviewUpdate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    title: str | None = None
+    comment: str | None = None
 
 # =========================================================
 # 3. GET MY TRIPS
@@ -3152,4 +3162,169 @@ def update_notification_preferences(
     return {
         "message": "Notification preferences updated successfully",
         "preferences": preferences[0],
+    }
+
+# =========================================================
+# TRAVELER REVIEWS
+# =========================================================
+
+@router.get("/reviews")
+def get_traveler_reviews(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+    f"{settings.supabase_url}/rest/v1/reviews",
+    headers=user_headers(token),
+    params={
+        "reviewer_id": f"eq.{user.id}",
+        "select": "*",
+        "order": "created_at.desc",
+    },
+    timeout=10.0,
+)
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load reviews",
+        )
+
+    reviews = response.json()
+
+    return {
+        "review_count": len(reviews),
+        "reviews": reviews,
+    }
+
+
+@router.post(
+    "/bookings/{booking_id}/items/{booking_item_id}/review"
+)
+def submit_traveler_review(
+    booking_id: int,
+    booking_item_id: int,
+    payload: ReviewCreate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # Confirm item belongs to this booking and is visible
+    item_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_items",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_item_id}",
+            "booking_id": f"eq.{booking_id}",
+            "select": "id,booking_id,item_type,status",
+        },
+        timeout=10.0,
+    )
+
+    if item_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking item",
+        )
+
+    items = item_response.json()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking item not found",
+        )
+
+    # Secure DB function performs ownership + eligibility checks
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/submit_review",
+        headers=user_headers(token),
+        json={
+            "p_booking_item_id": booking_item_id,
+            "p_rating": payload.rating,
+            "p_title": payload.title,
+            "p_comment": payload.comment,
+        },
+        timeout=20.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to submit review"
+            )
+        except Exception:
+            error_message = "Unable to submit review"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    review = response.json()
+
+    if isinstance(review, list):
+        if not review:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Review was not returned",
+            )
+        review = review[0]
+
+    return {
+        "message": "Review submitted successfully",
+        "review": review,
+    }
+
+
+@router.patch("/reviews/{review_id}")
+def edit_traveler_review(
+    review_id: int,
+    payload: ReviewUpdate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/edit_review",
+        headers=user_headers(token),
+        json={
+            "p_review_id": review_id,
+            "p_rating": payload.rating,
+            "p_title": payload.title,
+            "p_comment": payload.comment,
+        },
+        timeout=20.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to edit review"
+            )
+        except Exception:
+            error_message = "Unable to edit review"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    review = response.json()
+
+    if isinstance(review, list):
+        if not review:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Review not found",
+            )
+        review = review[0]
+
+    return {
+        "message": "Review updated successfully",
+        "review": review,
     }
