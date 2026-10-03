@@ -2582,3 +2582,108 @@ def update_room_cart_item(
         "message": "Room cart item updated successfully",
         "cart_item": updated_items[0],
     }
+
+# =========================================================
+# CHECKOUT TRIP
+# =========================================================
+
+@router.post("/trips/{trip_id}/checkout")
+def checkout_trip_endpoint(
+    trip_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm trip belongs to logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id,trip_name,status,start_date,end_date",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # 2. Make sure cart has at least one item
+    cart_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "trip_id": f"eq.{trip_id}",
+            "select": "id",
+        },
+        timeout=10.0,
+    )
+
+    if cart_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip cart",
+        )
+
+    cart_items = cart_response.json()
+
+    if not cart_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Trip cart is empty",
+        )
+
+    # 3. Call secure database checkout function
+    checkout_response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/checkout_trip",
+        headers=user_headers(token),
+        json={
+            "p_trip_id": trip_id,
+        },
+        timeout=30.0,
+    )
+
+    if checkout_response.status_code >= 400:
+        try:
+            error_data = checkout_response.json()
+
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Checkout failed"
+            )
+
+        except Exception:
+            error_message = "Checkout failed"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    booking = checkout_response.json()
+
+    # Supabase may return one object or a one-item list
+    if isinstance(booking, list):
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Checkout completed but booking was not returned",
+            )
+
+        booking = booking[0]
+
+    return {
+        "message": "Trip checkout completed successfully",
+        "booking": booking,
+    }
