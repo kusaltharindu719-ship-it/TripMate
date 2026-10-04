@@ -28,7 +28,7 @@ async def get_traveler_restaurants(
         response = await client.get(url, headers=user_headers(token))
         
         if response.status_code != 200:
-            print("SUPABASE ERROR:", response.status_code, response.text)
+            
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to fetch restaurants"
