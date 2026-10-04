@@ -27,3 +27,8 @@ def health_check():
     return {
         "status": "healthy",
     }
+from app.api.provider import router as provider_router
+from app.api.admin import router as admin_router
+
+app.include_router(provider_router)
+app.include_router(admin_router)
