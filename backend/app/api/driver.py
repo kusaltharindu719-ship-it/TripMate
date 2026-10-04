@@ -24,7 +24,7 @@ class AvailabilityUpdate(BaseModel):
 # 1. GET /driver/me - Driver ගේ profile එක ගැනීම[cite: 4, 5]
 @router.get("/me")
 def get_driver_me(
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
@@ -45,7 +45,7 @@ def get_driver_me(
 # 2. GET /driver/vehicles - Driver ට අදාළ වාහන ගැනීම[cite: 4, 5]
 @router.get("/vehicles")
 def get_driver_vehicles(
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     # 'vehicles' table එකක් පවතින බව උපකල්පනය කර ඇත
@@ -63,7 +63,7 @@ def get_driver_vehicles(
 # 3. GET /driver/availability - Driver ගේ availability status එක බැලීම[cite: 4]
 @router.get("/availability")
 def get_driver_availability(
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
@@ -82,7 +82,7 @@ def get_driver_availability(
 @router.patch("/availability")
 def update_driver_availability(
     payload: AvailabilityUpdate,
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     # RPC එකක් වෙනුවට Supabase REST හරහා කෙලින්ම driver_profiles update කිරීම

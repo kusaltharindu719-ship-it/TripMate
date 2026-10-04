@@ -44,7 +44,7 @@ class LocationUpdate(BaseModel):
 def create_transport_request(
     trip_id: int, 
     payload: TransportRequestCreate,
-    current_user: dict = Depends(require_roles(["traveler"])), 
+    current_user: dict = Depends(require_roles("traveler")), 
     token: str = Depends(get_access_token)
 ):
     data = payload.dict()
@@ -66,7 +66,7 @@ def create_transport_request(
 # 2. GET /traveler/transport-requests[cite: 5]
 @router.get("/traveler/transport-requests")
 def get_traveler_requests(
-    current_user: dict = Depends(require_roles(["traveler"])), 
+    current_user: dict = Depends(require_roles("traveler")), 
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
@@ -81,7 +81,7 @@ def get_traveler_requests(
 # 3. GET /driver/transport-requests/open[cite: 5]
 @router.get("/driver/transport-requests/open")
 def get_open_requests(
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
@@ -98,7 +98,7 @@ def get_open_requests(
 def submit_bid(
     request_id: int,
     payload: BidCreate,
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     data = payload.dict()
@@ -121,7 +121,7 @@ def submit_bid(
 @router.post("/driver/bids/{bid_id}/withdraw")
 def withdraw_bid(
     bid_id: int,
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     # RPC pattern[cite: 5, 6]
@@ -139,7 +139,7 @@ def withdraw_bid(
 @router.get("/traveler/transport-requests/{request_id}/bids")
 def get_bids_for_request(
     request_id: int,
-    current_user: dict = Depends(require_roles(["traveler"])), 
+    current_user: dict = Depends(require_roles("traveler")), 
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
@@ -156,7 +156,7 @@ def get_bids_for_request(
 def accept_bid(
     request_id: int,
     bid_id: int,
-    current_user: dict = Depends(require_roles(["traveler"])), 
+    current_user: dict = Depends(require_roles("traveler")), 
     token: str = Depends(get_access_token)
 ):
     # RPC pattern[cite: 5, 6]
@@ -177,7 +177,8 @@ def accept_bid(
 @router.get("/transport-requests/{request_id}")
 def get_request_details(
     request_id: int,
-    token: str = Depends(get_access_token)
+    current_user: dict = Depends(require_roles("traveler", "driver")),
+    token: str = Depends(get_access_token),
 ):
     response = httpx.get(
         f"{settings.supabase_url}/rest/v1/transport_requests?id=eq.{request_id}",
@@ -193,7 +194,7 @@ def get_request_details(
 def submit_location(
     request_id: int,
     payload: LocationUpdate,
-    current_user: dict = Depends(require_roles(["driver"])), 
+    current_user: dict = Depends(require_roles("driver")), 
     token: str = Depends(get_access_token)
 ):
     # RPC pattern[cite: 5, 6]
@@ -219,7 +220,7 @@ def submit_location(
 @router.get("/traveler/transport-requests/{request_id}/location")
 def get_transport_location(
     request_id: int,
-    current_user: dict = Depends(require_roles(["traveler"])), 
+    current_user: dict = Depends(require_roles("traveler")), 
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
