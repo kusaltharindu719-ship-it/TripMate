@@ -74,6 +74,10 @@ class TripCreate(BaseModel):
 
         return self
 
+class PaymentCreate(BaseModel):
+    payment_method: str
+    idempotency_key: str
+
 
 # =========================================================
 # HELPER
@@ -264,6 +268,40 @@ class RoomCartCreate(BaseModel):
     accommodation_meal_plan_id: int | None = None
     notes: str | None = None
 
+class RoomCartUpdate(BaseModel):
+    check_in_date: date | None = None
+    check_out_date: date | None = None
+    rooms_requested: int | None = None
+    adult_count: int | None = None
+    child_count: int | None = None
+    accommodation_meal_plan_id: int | None = None
+    notes: str | None = None
+
+class BookingCancellationRequest(BaseModel):
+    booking_item_id: int | None = None
+    reason: str | None = None
+
+class NotificationPreferencesUpdate(BaseModel):
+    in_app_enabled: bool | None = None
+    email_enabled: bool | None = None
+    push_enabled: bool | None = None
+    booking_updates: bool | None = None
+    driver_bid_updates: bool | None = None
+    verification_updates: bool | None = None
+    review_updates: bool | None = None
+    trip_reminders: bool | None = None
+    service_reminders: bool | None = None
+
+class ReviewCreate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    title: str | None = None
+    comment: str | None = None
+
+
+class ReviewUpdate(BaseModel):
+    rating: int = Field(..., ge=1, le=5)
+    title: str | None = None
+    comment: str | None = None
 
 # =========================================================
 # 3. GET MY TRIPS
@@ -1675,49 +1713,181 @@ def add_room_to_trip_cart(
         "message": "Room added to trip cart successfully",
         "cart_item": created_items[0],
     }
+
 # =========================================================
-# ADD ROOM TO TRIP CART
+# VIEW TRIP CART
 # =========================================================
 
-@router.post("/trips/{trip_id}/cart/rooms")
-def add_room_to_trip_cart(
+@router.get("/trips/{trip_id}/cart")
+def get_trip_cart(
     trip_id: int,
-    payload: RoomCartCreate,
     token: str = Depends(get_access_token),
     user: CurrentUser = Depends(require_roles("traveler")),
 ):
-    # 1. Basic validation
-    if payload.rooms_requested <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one room must be requested",
-        )
-
-    if payload.adult_count < 0 or payload.child_count < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Guest counts cannot be negative",
-        )
-
-    if payload.adult_count + payload.child_count <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one guest is required",
-        )
-
-    if payload.check_out_date <= payload.check_in_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Check-out date must be after check-in date",
-        )
-
-    # 2. Load the traveler's trip
+    # 1. Make sure this trip belongs to the logged-in traveler
     trip_response = httpx.get(
         f"{settings.supabase_url}/rest/v1/trips",
         headers=user_headers(token),
         params={
             "id": f"eq.{trip_id}",
-            "select": "id,start_date,end_date,adult_count,child_count,status",
+            "select": "id,trip_name,start_date,end_date,status",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # 2. Load cart items
+    cart_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "trip_id": f"eq.{trip_id}",
+            "select": "*",
+            "order": "created_at.asc",
+        },
+        timeout=10.0,
+    )
+
+    if cart_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip cart",
+        )
+
+    items = cart_response.json()
+
+    return {
+        "trip": trips[0],
+        "item_count": len(items),
+        "items": items,
+    }
+# =========================================================
+# REMOVE ITEM FROM TRIP CART
+# =========================================================
+
+@router.delete("/trips/{trip_id}/cart/{cart_item_id}")
+def remove_trip_cart_item(
+    trip_id: int,
+    cart_item_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm the trip belongs to the logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # 2. Confirm cart item belongs to this trip
+    item_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+            "select": "id,item_type,item_name_snapshot",
+        },
+        timeout=10.0,
+    )
+
+    if item_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load cart item",
+        )
+
+    items = item_response.json()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cart item not found",
+        )
+
+    item = items[0]
+
+    # 3. Delete cart item
+    delete_headers = {
+        **user_headers(token),
+        "Prefer": "return=representation",
+    }
+
+    delete_response = httpx.delete(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=delete_headers,
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+        },
+        timeout=10.0,
+    )
+
+    if delete_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to remove cart item",
+        )
+
+    return {
+        "message": "Cart item removed successfully",
+        "removed_item": {
+            "id": item["id"],
+            "item_type": item["item_type"],
+            "item_name": item["item_name_snapshot"],
+        },
+    }
+
+# =========================================================
+# UPDATE ROOM CART ITEM
+# =========================================================
+
+@router.patch("/trips/{trip_id}/cart/{cart_item_id}")
+def update_room_cart_item(
+    trip_id: int,
+    cart_item_id: int,
+    payload: RoomCartUpdate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm trip belongs to logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id,start_date,end_date,status",
         },
         timeout=10.0,
     )
@@ -1738,29 +1908,144 @@ def add_room_to_trip_cart(
 
     trip = trips[0]
 
+    # 2. Load current room cart item
+    item_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+            "item_type": "eq.room",
+            "select": (
+                "id,trip_id,item_type,room_type_id,"
+                "quantity,check_in_date,check_out_date,"
+                "selection_details,"
+                "accommodation_meal_plan_id,notes"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if item_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load cart item",
+        )
+
+    items = item_response.json()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room cart item not found",
+        )
+
+    current = items[0]
+
+    selection_details = current.get("selection_details") or {}
+
+    # 3. Merge old values with supplied update values
+    fields_set = payload.model_fields_set
+
+    check_in_date = (
+        payload.check_in_date
+        if "check_in_date" in fields_set
+        else date.fromisoformat(current["check_in_date"])
+    )
+
+    check_out_date = (
+        payload.check_out_date
+        if "check_out_date" in fields_set
+        else date.fromisoformat(current["check_out_date"])
+    )
+
+    rooms_requested = (
+        payload.rooms_requested
+        if "rooms_requested" in fields_set
+        else current["quantity"]
+    )
+
+    adult_count = (
+        payload.adult_count
+        if "adult_count" in fields_set
+        else selection_details.get("adult_count", 0)
+    )
+
+    child_count = (
+        payload.child_count
+        if "child_count" in fields_set
+        else selection_details.get("child_count", 0)
+    )
+
+    meal_plan_id = (
+        payload.accommodation_meal_plan_id
+        if "accommodation_meal_plan_id" in fields_set
+        else current["accommodation_meal_plan_id"]
+    )
+
+    notes = (
+        payload.notes
+        if "notes" in fields_set
+        else current["notes"]
+    )
+
+    # Required values cannot be explicitly changed to null
+    if check_in_date is None or check_out_date is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-in and check-out dates are required",
+        )
+
+    if rooms_requested is None or rooms_requested <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one room must be requested",
+        )
+
+    if adult_count is None or child_count is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Adult and child counts are required",
+        )
+
+    if adult_count < 0 or child_count < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Guest counts cannot be negative",
+        )
+
+    if adult_count + child_count <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one guest is required",
+        )
+
+    if check_out_date <= check_in_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Check-out date must be after check-in date",
+        )
+
+    # 4. Validate dates against trip
     trip_start = date.fromisoformat(trip["start_date"])
     trip_end = date.fromisoformat(trip["end_date"])
 
-    if (
-        payload.check_in_date < trip_start
-        or payload.check_out_date > trip_end
-    ):
+    if check_in_date < trip_start or check_out_date > trip_end:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Room dates must be within trip dates",
         )
 
-    # 3. Load room
+    # 5. Load room
     room_response = httpx.get(
         f"{settings.supabase_url}/rest/v1/room_types",
         headers=user_headers(token),
         params={
-            "id": f"eq.{payload.room_type_id}",
+            "id": f"eq.{current['room_type_id']}",
             "is_active": "eq.true",
             "select": (
                 "id,accommodation_id,name,"
-                "max_adults,max_children,max_guests,"
-                "base_price_per_night,currency,total_rooms"
+                "max_adults,max_children,max_guests"
             ),
         },
         timeout=10.0,
@@ -1782,39 +2067,38 @@ def add_room_to_trip_cart(
 
     room = rooms[0]
 
-    # 4. Capacity validation
-    max_adults = (room["max_adults"] or 0) * payload.rooms_requested
-    max_children = (room["max_children"] or 0) * payload.rooms_requested
-    max_guests = (room["max_guests"] or 0) * payload.rooms_requested
-
-    if payload.adult_count > max_adults:
+    # 6. Capacity validation
+    if adult_count > (room["max_adults"] or 0) * rooms_requested:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Adult count exceeds room capacity",
         )
 
-    if payload.child_count > max_children:
+    if child_count > (room["max_children"] or 0) * rooms_requested:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Child count exceeds room capacity",
         )
 
-    if payload.adult_count + payload.child_count > max_guests:
+    if (
+        adult_count + child_count
+        > (room["max_guests"] or 0) * rooms_requested
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Total guest count exceeds room capacity",
         )
 
-    # 5. Load configured room availability
-    nights = (payload.check_out_date - payload.check_in_date).days
+    # 7. Load availability for new/current dates
+    nights = (check_out_date - check_in_date).days
 
     availability_response = httpx.get(
         f"{settings.supabase_url}/rest/v1/room_availability",
         headers=user_headers(token),
         params=[
-            ("room_type_id", f"eq.{payload.room_type_id}"),
-            ("date", f"gte.{payload.check_in_date.isoformat()}"),
-            ("date", f"lt.{payload.check_out_date.isoformat()}"),
+            ("room_type_id", f"eq.{current['room_type_id']}"),
+            ("date", f"gte.{check_in_date.isoformat()}"),
+            ("date", f"lt.{check_out_date.isoformat()}"),
             (
                 "select",
                 "date,available_rooms,minimum_stay_nights,is_closed",
@@ -1833,13 +2117,13 @@ def add_room_to_trip_cart(
     availability = availability_response.json()
 
     expected_dates = {
-        (payload.check_in_date + timedelta(days=i)).isoformat()
+        (check_in_date + timedelta(days=i)).isoformat()
         for i in range(nights)
     }
 
     configured_dates = {
-        row["date"]
-        for row in availability
+        day["date"]
+        for day in availability
     }
 
     missing_dates = sorted(expected_dates - configured_dates)
@@ -1853,17 +2137,17 @@ def add_room_to_trip_cart(
             },
         )
 
-    # 6. Check already reserved inventory
+    # 8. Check already reserved inventory
     service_db = get_service_supabase()
 
     reservation_response = (
         service_db
         .table("room_inventory_reservations")
         .select("stay_date,rooms_reserved")
-        .eq("room_type_id", payload.room_type_id)
+        .eq("room_type_id", current["room_type_id"])
         .eq("status", "reserved")
-        .gte("stay_date", payload.check_in_date.isoformat())
-        .lt("stay_date", payload.check_out_date.isoformat())
+        .gte("stay_date", check_in_date.isoformat())
+        .lt("stay_date", check_out_date.isoformat())
         .execute()
     )
 
@@ -1877,7 +2161,6 @@ def add_room_to_trip_cart(
             + reservation["rooms_reserved"]
         )
 
-    # 7. Validate real remaining rooms
     minimum_stay_required = 1
 
     for day in availability:
@@ -1894,7 +2177,7 @@ def add_room_to_trip_cart(
             0,
         )
 
-        if remaining_rooms < payload.rooms_requested:
+        if remaining_rooms < rooms_requested:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Not enough rooms available on {day['date']}",
@@ -1911,18 +2194,15 @@ def add_room_to_trip_cart(
             detail=f"Minimum stay is {minimum_stay_required} nights",
         )
 
-    # 8. Validate optional meal plan
-    if payload.accommodation_meal_plan_id is not None:
+    # 9. Validate optional meal plan
+    if meal_plan_id is not None:
         meal_response = httpx.get(
             f"{settings.supabase_url}/rest/v1/accommodation_meal_plans",
             headers=user_headers(token),
             params={
-                "id": f"eq.{payload.accommodation_meal_plan_id}",
+                "id": f"eq.{meal_plan_id}",
                 "is_available": "eq.true",
-                "select": (
-                    "id,accommodation_id,"
-                    "price_per_adult,price_per_child,currency"
-                ),
+                "select": "id,accommodation_id",
             },
             timeout=10.0,
         )
@@ -1947,59 +2227,1094 @@ def add_room_to_trip_cart(
                 detail="Meal plan must belong to the same accommodation",
             )
 
-    # 9. Add room to cart
-    cart_data = {
-        "trip_id": trip_id,
-        "item_type": "room",
-        "room_type_id": payload.room_type_id,
-        "quantity": payload.rooms_requested,
-        "check_in_date": payload.check_in_date.isoformat(),
-        "check_out_date": payload.check_out_date.isoformat(),
-        "accommodation_meal_plan_id": payload.accommodation_meal_plan_id,
+    # 10. Update cart item
+    update_data = {
+        "quantity": rooms_requested,
+        "check_in_date": check_in_date.isoformat(),
+        "check_out_date": check_out_date.isoformat(),
+        "accommodation_meal_plan_id": meal_plan_id,
         "selection_details": {
-            "adult_count": payload.adult_count,
-            "child_count": payload.child_count,
+            "adult_count": adult_count,
+            "child_count": child_count,
         },
-        "notes": payload.notes,
+        "notes": notes,
     }
 
-    insert_headers = {
+    update_headers = {
         **user_headers(token),
         "Prefer": "return=representation",
     }
 
-    insert_response = httpx.post(
+    update_response = httpx.patch(
         f"{settings.supabase_url}/rest/v1/trip_cart_items",
-        headers=insert_headers,
-        json=cart_data,
+        headers=update_headers,
+        params={
+            "id": f"eq.{cart_item_id}",
+            "trip_id": f"eq.{trip_id}",
+        },
+        json=update_data,
         timeout=10.0,
     )
 
-    if insert_response.status_code >= 400:
+    if update_response.status_code >= 400:
         try:
-            error_data = insert_response.json()
+            error_data = update_response.json()
             error_message = (
                 error_data.get("message")
                 or error_data.get("details")
-                or "Unable to add room to cart"
+                or "Unable to update cart item"
             )
         except Exception:
-            error_message = "Unable to add room to cart"
+            error_message = "Unable to update cart item"
 
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=error_message,
         )
 
-    created_items = insert_response.json()
+    updated_items = update_response.json()
 
-    if not created_items:
+    if not updated_items:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Cart item was not returned",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cart item not found",
         )
 
     return {
-        "message": "Room added to trip cart successfully",
-        "cart_item": created_items[0],
+        "message": "Room cart item updated successfully",
+        "cart_item": updated_items[0],
+    }
+
+# =========================================================
+# CHECKOUT TRIP
+# =========================================================
+
+@router.post("/trips/{trip_id}/checkout")
+def checkout_trip_endpoint(
+    trip_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm trip belongs to logged-in traveler
+    trip_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trips",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{trip_id}",
+            "select": "id,trip_name,status,start_date,end_date",
+        },
+        timeout=10.0,
+    )
+
+    if trip_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip",
+        )
+
+    trips = trip_response.json()
+
+    if not trips:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # 2. Make sure cart has at least one item
+    cart_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/trip_cart_items",
+        headers=user_headers(token),
+        params={
+            "trip_id": f"eq.{trip_id}",
+            "select": "id",
+        },
+        timeout=10.0,
+    )
+
+    if cart_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load trip cart",
+        )
+
+    cart_items = cart_response.json()
+
+    if not cart_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Trip cart is empty",
+        )
+
+    # 3. Call secure database checkout function
+    checkout_response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/checkout_trip",
+        headers=user_headers(token),
+        json={
+            "p_trip_id": trip_id,
+        },
+        timeout=30.0,
+    )
+
+    if checkout_response.status_code >= 400:
+        try:
+            error_data = checkout_response.json()
+
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Checkout failed"
+            )
+
+        except Exception:
+            error_message = "Checkout failed"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    booking = checkout_response.json()
+
+    # Supabase may return one object or a one-item list
+    if isinstance(booking, list):
+        if not booking:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Checkout completed but booking was not returned",
+            )
+
+        booking = booking[0]
+
+    return {
+        "message": "Trip checkout completed successfully",
+        "booking": booking,
+    }
+
+# =========================================================
+# TRAVELER BOOKINGS
+# =========================================================
+
+@router.get("/bookings")
+def get_traveler_bookings(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "select": "*",
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load bookings",
+        )
+
+    bookings = response.json()
+
+    return {
+        "booking_count": len(bookings),
+        "bookings": bookings,
+    }
+
+
+@router.get("/bookings/{booking_id}")
+def get_traveler_booking_details(
+    booking_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Load booking
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": "*",
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    booking = bookings[0]
+
+    # 2. Load booking items
+    items_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_items",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": "*",
+            "order": "created_at.asc",
+        },
+        timeout=10.0,
+    )
+
+    if items_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking items",
+        )
+
+    items = items_response.json()
+
+    return {
+        "booking": booking,
+        "item_count": len(items),
+        "items": items,
+    }
+
+# =========================================================
+# REQUEST BOOKING CANCELLATION
+# =========================================================
+
+@router.post("/bookings/{booking_id}/cancellations")
+def request_booking_cancellation(
+    booking_id: int,
+    payload: BookingCancellationRequest,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/request_booking_cancellation",
+        headers=user_headers(token),
+        json={
+            "p_booking_id": booking_id,
+            "p_booking_item_id": payload.booking_item_id,
+            "p_reason": payload.reason,
+        },
+        timeout=20.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to request booking cancellation"
+            )
+        except Exception:
+            error_message = "Unable to request booking cancellation"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    cancellation = response.json()
+
+    if isinstance(cancellation, list):
+        if not cancellation:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Cancellation request was not returned",
+            )
+
+        cancellation = cancellation[0]
+
+    return {
+        "message": "Booking cancellation requested successfully",
+        "cancellation": cancellation,
+    }
+
+# =========================================================
+# VIEW BOOKING CANCELLATIONS
+# =========================================================
+
+@router.get("/bookings/{booking_id}/cancellations")
+def get_booking_cancellations(
+    booking_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm booking belongs to logged-in traveler
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": "id,booking_reference,status,payment_status",
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    # 2. Load cancellation requests
+    cancellation_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_cancellations",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_id,booking_item_id,"
+                "cancellation_type,reason,status,"
+                "refund_amount,requested_at,"
+                "reviewed_at,processed_at,"
+                "review_notes"
+            ),
+            "order": "requested_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if cancellation_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load cancellation requests",
+        )
+
+    cancellations = cancellation_response.json()
+
+    return {
+        "booking": bookings[0],
+        "cancellation_count": len(cancellations),
+        "cancellations": cancellations,
+    }
+
+# =========================================================
+# TRAVELER NOTIFICATIONS
+# =========================================================
+
+@router.get("/notifications")
+def get_traveler_notifications(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/notifications",
+        headers=user_headers(token),
+        params={
+            "select": (
+                "id,notification_type,title,message,"
+                "event_key,related_entity_type,"
+                "related_entity_id,deep_link,data,"
+                "priority,is_read,read_at,"
+                "scheduled_for,sent_at,expires_at,"
+                "created_at"
+            ),
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load notifications",
+        )
+
+    notifications = response.json()
+
+    unread_count = sum(
+        1
+        for notification in notifications
+        if not notification["is_read"]
+    )
+
+    return {
+        "notification_count": len(notifications),
+        "unread_count": unread_count,
+        "notifications": notifications,
+    }
+
+
+# IMPORTANT:
+# Keep this route BEFORE /notifications/{notification_id}/read
+@router.patch("/notifications/read-all")
+def mark_all_traveler_notifications_read(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/mark_all_notifications_read",
+        headers=user_headers(token),
+        json={},
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to mark notifications as read"
+            )
+        except Exception:
+            error_message = "Unable to mark notifications as read"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    updated_count = response.json()
+
+    return {
+        "message": "All notifications marked as read",
+        "updated_count": updated_count,
+    }
+
+
+@router.patch("/notifications/{notification_id}/read")
+def set_traveler_notification_read_state(
+    notification_id: int,
+    is_read: bool = True,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/set_notification_read_state",
+        headers=user_headers(token),
+        json={
+            "p_notification_id": notification_id,
+            "p_is_read": is_read,
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to update notification"
+            )
+        except Exception:
+            error_message = "Unable to update notification"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    notification = response.json()
+
+    if isinstance(notification, list):
+        if not notification:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Notification not found",
+            )
+
+        notification = notification[0]
+
+    return {
+        "message": "Notification read state updated successfully",
+        "notification": notification,
+    }
+
+# =========================================================
+# NOTIFICATION PREFERENCES
+# =========================================================
+
+@router.get("/notification-preferences")
+def get_notification_preferences(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/notification_preferences",
+        headers=user_headers(token),
+        params={
+            "select": (
+                "user_id,in_app_enabled,email_enabled,push_enabled,"
+                "booking_updates,driver_bid_updates,"
+                "verification_updates,review_updates,"
+                "trip_reminders,service_reminders,updated_at"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load notification preferences",
+        )
+
+    preferences = response.json()
+
+    if not preferences:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification preferences not found",
+        )
+
+    return {
+        "preferences": preferences[0],
+    }
+
+
+@router.patch("/notification-preferences")
+def update_notification_preferences(
+    payload: NotificationPreferencesUpdate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    update_data = payload.model_dump(
+        exclude_unset=True,
+        exclude_none=True,
+    )
+
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No preference changes provided",
+        )
+
+    update_headers = {
+        **user_headers(token),
+        "Prefer": "return=representation",
+    }
+
+    response = httpx.patch(
+    f"{settings.supabase_url}/rest/v1/notification_preferences",
+    headers=update_headers,
+    params={
+        "user_id": f"eq.{user.id}",
+    },
+    json=update_data,
+    timeout=10.0,
+)
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to update notification preferences"
+            )
+        except Exception:
+            error_message = "Unable to update notification preferences"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    preferences = response.json()
+
+    if not preferences:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification preferences not found",
+        )
+
+    return {
+        "message": "Notification preferences updated successfully",
+        "preferences": preferences[0],
+    }
+
+# =========================================================
+# TRAVELER REVIEWS
+# =========================================================
+
+@router.get("/reviews")
+def get_traveler_reviews(
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.get(
+    f"{settings.supabase_url}/rest/v1/reviews",
+    headers=user_headers(token),
+    params={
+        "reviewer_id": f"eq.{user.id}",
+        "select": "*",
+        "order": "created_at.desc",
+    },
+    timeout=10.0,
+)
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load reviews",
+        )
+
+    reviews = response.json()
+
+    return {
+        "review_count": len(reviews),
+        "reviews": reviews,
+    }
+
+
+@router.post(
+    "/bookings/{booking_id}/items/{booking_item_id}/review"
+)
+def submit_traveler_review(
+    booking_id: int,
+    booking_item_id: int,
+    payload: ReviewCreate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # Confirm item belongs to this booking and is visible
+    item_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_items",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_item_id}",
+            "booking_id": f"eq.{booking_id}",
+            "select": "id,booking_id,item_type,status",
+        },
+        timeout=10.0,
+    )
+
+    if item_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking item",
+        )
+
+    items = item_response.json()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking item not found",
+        )
+
+    # Secure DB function performs ownership + eligibility checks
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/submit_review",
+        headers=user_headers(token),
+        json={
+            "p_booking_item_id": booking_item_id,
+            "p_rating": payload.rating,
+            "p_title": payload.title,
+            "p_comment": payload.comment,
+        },
+        timeout=20.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to submit review"
+            )
+        except Exception:
+            error_message = "Unable to submit review"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    review = response.json()
+
+    if isinstance(review, list):
+        if not review:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Review was not returned",
+            )
+        review = review[0]
+
+    return {
+        "message": "Review submitted successfully",
+        "review": review,
+    }
+
+
+@router.patch("/reviews/{review_id}")
+def edit_traveler_review(
+    review_id: int,
+    payload: ReviewUpdate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/edit_review",
+        headers=user_headers(token),
+        json={
+            "p_review_id": review_id,
+            "p_rating": payload.rating,
+            "p_title": payload.title,
+            "p_comment": payload.comment,
+        },
+        timeout=20.0,
+    )
+
+    if response.status_code >= 400:
+        try:
+            error_data = response.json()
+            error_message = (
+                error_data.get("message")
+                or error_data.get("details")
+                or "Unable to edit review"
+            )
+        except Exception:
+            error_message = "Unable to edit review"
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message,
+        )
+
+    review = response.json()
+
+    if isinstance(review, list):
+        if not review:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Review not found",
+            )
+        review = review[0]
+
+    return {
+        "message": "Review updated successfully",
+        "review": review,
+    }
+
+# =========================================================
+# TRAVELER PAYMENTS
+# =========================================================
+
+@router.get("/bookings/{booking_id}/payments")
+def get_booking_payments(
+    booking_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm booking belongs to logged-in traveler
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_reference,status,payment_status,"
+                "currency,total_amount"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    booking = bookings[0]
+
+    # 2. Load payment transactions
+    transaction_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/payment_transactions",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_id,payment_method,payment_processor,"
+                "external_reference,idempotency_key,amount,currency,"
+                "status,failure_reason,succeeded_at,created_at,updated_at"
+            ),
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if transaction_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load payment transactions",
+        )
+
+    transactions = transaction_response.json()
+
+    # 3. Load refunds
+    refund_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/payment_refunds",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": (
+                "id,payment_transaction_id,booking_id,"
+                "cancellation_id,amount,currency,status,"
+                "payment_processor,external_reference,"
+                "reason,processed_at,created_at,updated_at"
+            ),
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if refund_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load payment refunds",
+        )
+
+    refunds = refund_response.json()
+
+    successful_payment_total = sum(
+        transaction["amount"]
+        for transaction in transactions
+        if transaction["status"] == "succeeded"
+    )
+
+    successful_refund_total = sum(
+        refund["amount"]
+        for refund in refunds
+        if refund["status"] == "succeeded"
+    )
+
+    outstanding_amount = max(
+        booking["total_amount"] - successful_payment_total,
+        0,
+    )
+
+    return {
+        "booking": booking,
+        "successful_payment_total": successful_payment_total,
+        "successful_refund_total": successful_refund_total,
+        "outstanding_amount": outstanding_amount,
+        "transaction_count": len(transactions),
+        "transactions": transactions,
+        "refund_count": len(refunds),
+        "refunds": refunds,
+    }
+
+
+@router.post("/bookings/{booking_id}/payments")
+def create_booking_payment(
+    booking_id: int,
+    payload: PaymentCreate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    allowed_methods = {
+        "pay_later",
+        "cash",
+        "bank_transfer",
+        "online_card",
+    }
+
+    payment_method = payload.payment_method.strip()
+
+    if payment_method not in allowed_methods:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid payment method",
+        )
+
+    idempotency_key = payload.idempotency_key.strip()
+
+    if not idempotency_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency key is required",
+        )
+
+    # 1. Confirm booking belongs to logged-in traveler
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_reference,status,payment_status,"
+                "currency,total_amount"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    booking = bookings[0]
+
+    if booking["status"] in {
+        "cancelled",
+        "failed",
+        "expired",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment cannot be created for this booking",
+        )
+
+    # 2. Do not start payment while cancellation is active
+    cancellation_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_cancellations",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "status": "in.(requested,approved)",
+            "select": "id,status",
+        },
+        timeout=10.0,
+    )
+
+    if cancellation_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to check cancellation status",
+        )
+
+    if cancellation_response.json():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Payment cannot be started while an active "
+                "cancellation request exists"
+            ),
+        )
+
+    # 3. Load existing transactions
+    transaction_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/payment_transactions",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": "id,amount,status",
+        },
+        timeout=10.0,
+    )
+
+    if transaction_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load payment transactions",
+        )
+
+    transactions = transaction_response.json()
+
+    # Prevent multiple simultaneous payment attempts
+    active_transactions = [
+        transaction
+        for transaction in transactions
+        if transaction["status"] in {
+            "pending",
+            "processing",
+        }
+    ]
+
+    if active_transactions:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active payment transaction already exists",
+        )
+
+    successful_payment_total = sum(
+        transaction["amount"]
+        for transaction in transactions
+        if transaction["status"] == "succeeded"
+    )
+
+    outstanding_amount = (
+        booking["total_amount"]
+        - successful_payment_total
+    )
+
+    if outstanding_amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This booking has no outstanding payment",
+        )
+
+    # 4. Trusted backend creates pending transaction
+    service_db = get_service_supabase()
+
+    try:
+        result = (
+            service_db
+            .rpc(
+                "create_payment_transaction",
+                {
+                    "p_booking_id": booking_id,
+                    "p_payment_method": payment_method,
+                    "p_amount": outstanding_amount,
+                    "p_currency": booking["currency"],
+                    "p_idempotency_key": idempotency_key,
+                    "p_payment_processor": "manual",
+                    "p_external_reference": None,
+                    "p_metadata": {
+                        "source": "tripmate_backend"
+                    },
+                },
+            )
+            .execute()
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    transaction = result.data
+
+    if isinstance(transaction, list):
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Payment transaction was not returned",
+            )
+
+        transaction = transaction[0]
+
+    return {
+        "message": "Payment transaction created successfully",
+        "transaction": transaction,
     }
