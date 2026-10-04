@@ -74,6 +74,10 @@ class TripCreate(BaseModel):
 
         return self
 
+class PaymentCreate(BaseModel):
+    payment_method: str
+    idempotency_key: str
+
 
 # =========================================================
 # HELPER
@@ -3327,4 +3331,317 @@ def edit_traveler_review(
     return {
         "message": "Review updated successfully",
         "review": review,
+    }
+
+# =========================================================
+# TRAVELER PAYMENTS
+# =========================================================
+
+@router.get("/bookings/{booking_id}/payments")
+def get_booking_payments(
+    booking_id: int,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    # 1. Confirm booking belongs to logged-in traveler
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_reference,status,payment_status,"
+                "currency,total_amount"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    booking = bookings[0]
+
+    # 2. Load payment transactions
+    transaction_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/payment_transactions",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_id,payment_method,payment_processor,"
+                "external_reference,idempotency_key,amount,currency,"
+                "status,failure_reason,succeeded_at,created_at,updated_at"
+            ),
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if transaction_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load payment transactions",
+        )
+
+    transactions = transaction_response.json()
+
+    # 3. Load refunds
+    refund_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/payment_refunds",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": (
+                "id,payment_transaction_id,booking_id,"
+                "cancellation_id,amount,currency,status,"
+                "payment_processor,external_reference,"
+                "reason,processed_at,created_at,updated_at"
+            ),
+            "order": "created_at.desc",
+        },
+        timeout=10.0,
+    )
+
+    if refund_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load payment refunds",
+        )
+
+    refunds = refund_response.json()
+
+    successful_payment_total = sum(
+        transaction["amount"]
+        for transaction in transactions
+        if transaction["status"] == "succeeded"
+    )
+
+    successful_refund_total = sum(
+        refund["amount"]
+        for refund in refunds
+        if refund["status"] == "succeeded"
+    )
+
+    outstanding_amount = max(
+        booking["total_amount"] - successful_payment_total,
+        0,
+    )
+
+    return {
+        "booking": booking,
+        "successful_payment_total": successful_payment_total,
+        "successful_refund_total": successful_refund_total,
+        "outstanding_amount": outstanding_amount,
+        "transaction_count": len(transactions),
+        "transactions": transactions,
+        "refund_count": len(refunds),
+        "refunds": refunds,
+    }
+
+
+@router.post("/bookings/{booking_id}/payments")
+def create_booking_payment(
+    booking_id: int,
+    payload: PaymentCreate,
+    token: str = Depends(get_access_token),
+    user: CurrentUser = Depends(require_roles("traveler")),
+):
+    allowed_methods = {
+        "pay_later",
+        "cash",
+        "bank_transfer",
+        "online_card",
+    }
+
+    payment_method = payload.payment_method.strip()
+
+    if payment_method not in allowed_methods:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid payment method",
+        )
+
+    idempotency_key = payload.idempotency_key.strip()
+
+    if not idempotency_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency key is required",
+        )
+
+    # 1. Confirm booking belongs to logged-in traveler
+    booking_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/bookings",
+        headers=user_headers(token),
+        params={
+            "id": f"eq.{booking_id}",
+            "select": (
+                "id,booking_reference,status,payment_status,"
+                "currency,total_amount"
+            ),
+        },
+        timeout=10.0,
+    )
+
+    if booking_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load booking",
+        )
+
+    bookings = booking_response.json()
+
+    if not bookings:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Booking not found",
+        )
+
+    booking = bookings[0]
+
+    if booking["status"] in {
+        "cancelled",
+        "failed",
+        "expired",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payment cannot be created for this booking",
+        )
+
+    # 2. Do not start payment while cancellation is active
+    cancellation_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/booking_cancellations",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "status": "in.(requested,approved)",
+            "select": "id,status",
+        },
+        timeout=10.0,
+    )
+
+    if cancellation_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to check cancellation status",
+        )
+
+    if cancellation_response.json():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Payment cannot be started while an active "
+                "cancellation request exists"
+            ),
+        )
+
+    # 3. Load existing transactions
+    transaction_response = httpx.get(
+        f"{settings.supabase_url}/rest/v1/payment_transactions",
+        headers=user_headers(token),
+        params={
+            "booking_id": f"eq.{booking_id}",
+            "select": "id,amount,status",
+        },
+        timeout=10.0,
+    )
+
+    if transaction_response.status_code >= 400:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load payment transactions",
+        )
+
+    transactions = transaction_response.json()
+
+    # Prevent multiple simultaneous payment attempts
+    active_transactions = [
+        transaction
+        for transaction in transactions
+        if transaction["status"] in {
+            "pending",
+            "processing",
+        }
+    ]
+
+    if active_transactions:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An active payment transaction already exists",
+        )
+
+    successful_payment_total = sum(
+        transaction["amount"]
+        for transaction in transactions
+        if transaction["status"] == "succeeded"
+    )
+
+    outstanding_amount = (
+        booking["total_amount"]
+        - successful_payment_total
+    )
+
+    if outstanding_amount <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This booking has no outstanding payment",
+        )
+
+    # 4. Trusted backend creates pending transaction
+    service_db = get_service_supabase()
+
+    try:
+        result = (
+            service_db
+            .rpc(
+                "create_payment_transaction",
+                {
+                    "p_booking_id": booking_id,
+                    "p_payment_method": payment_method,
+                    "p_amount": outstanding_amount,
+                    "p_currency": booking["currency"],
+                    "p_idempotency_key": idempotency_key,
+                    "p_payment_processor": "manual",
+                    "p_external_reference": None,
+                    "p_metadata": {
+                        "source": "tripmate_backend"
+                    },
+                },
+            )
+            .execute()
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    transaction = result.data
+
+    if isinstance(transaction, list):
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Payment transaction was not returned",
+            )
+
+        transaction = transaction[0]
+
+    return {
+        "message": "Payment transaction created successfully",
+        "transaction": transaction,
     }
