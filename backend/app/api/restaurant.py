@@ -265,7 +265,7 @@ async def add_buffet_to_cart(
     token: str = Depends(get_access_token),
     current_user: CurrentUser = Depends(require_roles("traveler"))
 ):
-    payload = {
+payload = {
     "trip_id": trip_id,
     "item_type": "buffet",
     "buffet_package_id": item.buffet_id,
