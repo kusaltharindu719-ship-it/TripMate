@@ -225,31 +225,39 @@ async def add_food_to_cart(
 ):
     payload = {
         "trip_id": trip_id,
+        "item_type": "food",
         "food_item_id": item.food_item_id,
         "quantity": item.quantity,
-        "special_instructions": item.special_instructions
+        "selection_details": {
+            "special_instructions": item.special_instructions
+        }
     }
-    
+
     async with httpx.AsyncClient() as client:
-        url = f"{settings.supabase_url}/rest/v1/trip_food_cart"
-        response = await client.post(url, headers=user_headers(token), json=payload)
-        
+        url = f"{settings.supabase_url}/rest/v1/trip_cart_items"
+
+        response = await client.post(
+            url,
+            headers=user_headers(token),
+            json=payload
+        )
+
         if response.status_code not in [200, 201]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to add food item to cart"
             )
-            
-        return {"message": "Food item added to cart successfully", "data": response.json() if response.content else {}}
 
-
-        # Cart buffet Pydantic model
+        return {
+            "message": "Food item added to cart successfully",
+            "data": response.json() if response.content else {}
+        }
+# 8. Buffet cart itemcreated
 class AddBuffetCartItem(BaseModel):
     buffet_id: int
     persons_count: int = Field(..., gt=0)
     reservation_date: date
 
-# 8. Buffet cart itemcreated
 @router.post("/trips/{trip_id}/cart/buffets")
 async def add_buffet_to_cart(
     trip_id: int,
@@ -259,24 +267,30 @@ async def add_buffet_to_cart(
 ):
     payload = {
         "trip_id": trip_id,
-        "buffet_id": item.buffet_id,
-        "persons_count": item.persons_count,
-        "reservation_date": str(item.reservation_date)
+        "item_type": "buffet",
+        "buffet_package_id": item.buffet_id,
+        "quantity": item.persons_count,
+        "service_date": item.reservation_date.isoformat()
     }
-    
+
     async with httpx.AsyncClient() as client:
-        url = f"{settings.supabase_url}/rest/v1/trip_buffet_cart"
-        response = await client.post(url, headers=user_headers(token), json=payload)
-        
+        url = f"{settings.supabase_url}/rest/v1/trip_cart_items"
+        response = await client.post(
+            url,
+            headers=user_headers(token),
+            json=payload
+        )
+
         if response.status_code not in [200, 201]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to add buffet package to cart"
             )
-            
-        return {"message": "Buffet package added to cart successfully", "data": response.json() if response.content else {}}
 
-
+        return {
+            "message": "Buffet package added to cart successfully",
+            "data": response.json() if response.content else {}
+        }
         # Restaurant reservation cart  Pydantic model 
 class AddReservationCartItem(BaseModel):
     restaurant_id: int
@@ -296,21 +310,33 @@ async def add_restaurant_reservation_to_cart(
 ):
     payload = {
         "trip_id": trip_id,
+        "item_type": "restaurant_reservation",
         "restaurant_id": item.restaurant_id,
-        "reservation_date": str(item.reservation_date),
-        "reservation_time": str(item.reservation_time),
-        "guests_count": item.guests_count,
-        "special_requests": item.special_requests
+        "quantity": item.guests_count,
+        "service_date": item.reservation_date.isoformat(),
+        "service_start_time": item.reservation_time.isoformat(),
+        "selection_details": {
+            "guests_count": item.guests_count,
+            "special_requests": item.special_requests
+        }
     }
-    
+
     async with httpx.AsyncClient() as client:
-        url = f"{settings.supabase_url}/rest/v1/trip_restaurant_reservations_cart"
-        response = await client.post(url, headers=user_headers(token), json=payload)
-        
+        url = f"{settings.supabase_url}/rest/v1/trip_cart_items"
+
+        response = await client.post(
+            url,
+            headers=user_headers(token),
+            json=payload
+        )
+
         if response.status_code not in [200, 201]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to add restaurant reservation to cart"
             )
-            
-        return {"message": "Restaurant reservation added to cart successfully", "data": response.json() if response.content else {}}
+
+        return {
+            "message": "Restaurant reservation added to cart successfully",
+            "data": response.json() if response.content else {}
+        }
