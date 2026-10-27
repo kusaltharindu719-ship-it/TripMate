@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from app.api.restaurant_owner import router as restaurant_owner_router
 
 from app.api.auth import router as auth_router
 from app.api.traveler import router as traveler_router
@@ -15,6 +16,7 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(traveler_router)
 app.include_router(restaurant_router)
+app.include_router(restaurant_owner_router)
 
 
 @app.get("/")
