@@ -18,12 +18,13 @@ def user_headers(token: str):
 
 # Data Models
 class TransportRequestCreate(BaseModel):
-    pickup_location_snapshot: str
-    trip_start_date: date
-    trip_end_date: date
-    passenger_count: int
-    luggage_count: int
-    currency: str
+    luggage_count: int = Field(default=0, ge=0)
+
+class OpenTransportRequest(BaseModel):
+    route_distance_km: float = Field(..., gt=0)
+    estimated_duration_minutes: int = Field(..., gt=0)
+    bidding_deadline: datetime
+    luggage_count: int = Field(default=0, ge=0)
 
 class BidCreate(BaseModel):
     vehicle_id: int
@@ -42,17 +43,17 @@ class LocationUpdate(BaseModel):
 # 1. POST /traveler/trips/{trip_id}/transport-requests[cite: 5]
 @router.post("/traveler/trips/{trip_id}/transport-requests")
 def create_transport_request(
-    trip_id: int, 
+    trip_id: int,
     payload: TransportRequestCreate,
-    current_user: dict = Depends(require_roles("traveler")), 
+    current_user: CurrentUser = Depends(require_roles("traveler")),
     token: str = Depends(get_access_token)
 ):
-    data = payload.dict()
-    data.update({
-        "trip_id": trip_id,
-        "traveler_id": current_user['id'],
-        "status": "OPEN"
-    })
+    data = {
+    "trip_id": trip_id,
+    "traveler_id": current_user.id,
+    "luggage_count": payload.luggage_count,
+    "status": "draft"
+}
     response = httpx.post(
         f"{settings.supabase_url}/rest/v1/transport_requests",
         headers=user_headers(token),
@@ -63,14 +64,42 @@ def create_transport_request(
         raise HTTPException(status_code=response.status_code, detail="Failed to create request")
     return response.json()[0]
 
+@router.post("/traveler/transport-requests/{request_id}/open")
+def open_transport_request(
+    request_id: int,
+    payload: OpenTransportRequest,
+    current_user: CurrentUser = Depends(require_roles("traveler")),
+    token: str = Depends(get_access_token)
+):
+    response = httpx.post(
+        f"{settings.supabase_url}/rest/v1/rpc/open_transport_request",
+        headers=user_headers(token),
+        json={
+            "p_request_id": request_id,
+            "p_route_distance_km": payload.route_distance_km,
+            "p_estimated_duration_minutes": payload.estimated_duration_minutes,
+            "p_bidding_deadline": payload.bidding_deadline.isoformat(),
+            "p_luggage_count": payload.luggage_count
+        },
+        timeout=10.0
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail="Could not open transport request"
+        )
+
+    return response.json()
+
 # 2. GET /traveler/transport-requests[cite: 5]
 @router.get("/traveler/transport-requests")
 def get_traveler_requests(
-    current_user: dict = Depends(require_roles("traveler")), 
+    current_user: CurrentUser = Depends(require_roles("traveler")),
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
-        f"{settings.supabase_url}/rest/v1/transport_requests?traveler_id=eq.{current_user['id']}",
+        f"{settings.supabase_url}/rest/v1/transport_requests?traveler_id=eq.{current_user.id}",
         headers=user_headers(token),
         timeout=10.0
     )
@@ -81,11 +110,11 @@ def get_traveler_requests(
 # 3. GET /driver/transport-requests/open[cite: 5]
 @router.get("/driver/transport-requests/open")
 def get_open_requests(
-    current_user: dict = Depends(require_roles("driver")), 
+    current_user: CurrentUser = Depends(require_roles("driver")),
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
-        f"{settings.supabase_url}/rest/v1/transport_requests?status=eq.OPEN",
+        f"{settings.supabase_url}/rest/v1/transport_requests?status=eq.open",
         headers=user_headers(token),
         timeout=10.0
     )
@@ -98,14 +127,14 @@ def get_open_requests(
 def submit_bid(
     request_id: int,
     payload: BidCreate,
-    current_user: dict = Depends(require_roles("driver")), 
+    current_user: CurrentUser = Depends(require_roles("driver")),
     token: str = Depends(get_access_token)
 ):
     data = payload.dict()
     data.update({
         "transport_request_id": request_id,
-        "driver_id": current_user['id'],
-        "status": "SUBMITTED"
+        "driver_id": current_user.id,
+        "status": "pending"
     })
     response = httpx.post(
         f"{settings.supabase_url}/rest/v1/driver_bids",
@@ -121,7 +150,7 @@ def submit_bid(
 @router.post("/driver/bids/{bid_id}/withdraw")
 def withdraw_bid(
     bid_id: int,
-    current_user: dict = Depends(require_roles("driver")), 
+    current_user: CurrentUser = Depends(require_roles("driver")),
     token: str = Depends(get_access_token)
 ):
     # RPC pattern[cite: 5, 6]
@@ -139,7 +168,7 @@ def withdraw_bid(
 @router.get("/traveler/transport-requests/{request_id}/bids")
 def get_bids_for_request(
     request_id: int,
-    current_user: dict = Depends(require_roles("traveler")), 
+    current_user: CurrentUser = Depends(require_roles("traveler")),
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(
@@ -156,7 +185,7 @@ def get_bids_for_request(
 def accept_bid(
     request_id: int,
     bid_id: int,
-    current_user: dict = Depends(require_roles("traveler")), 
+    current_user: CurrentUser = Depends(require_roles("traveler")),
     token: str = Depends(get_access_token)
 ):
     # RPC pattern[cite: 5, 6]
@@ -177,7 +206,7 @@ def accept_bid(
 @router.get("/transport-requests/{request_id}")
 def get_request_details(
     request_id: int,
-    current_user: dict = Depends(require_roles("traveler", "driver")),
+    current_user: CurrentUser = Depends(require_roles("traveler", "driver")),
     token: str = Depends(get_access_token),
 ):
     response = httpx.get(
@@ -194,7 +223,7 @@ def get_request_details(
 def submit_location(
     request_id: int,
     payload: LocationUpdate,
-    current_user: dict = Depends(require_roles("driver")), 
+    current_user: CurrentUser = Depends(require_roles("driver")),
     token: str = Depends(get_access_token)
 ):
     # RPC pattern[cite: 5, 6]
@@ -220,7 +249,7 @@ def submit_location(
 @router.get("/traveler/transport-requests/{request_id}/location")
 def get_transport_location(
     request_id: int,
-    current_user: dict = Depends(require_roles("traveler")), 
+    current_user: CurrentUser = Depends(require_roles("traveler")),
     token: str = Depends(get_access_token)
 ):
     response = httpx.get(

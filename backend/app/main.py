@@ -4,6 +4,9 @@ from app.api.auth import router as auth_router
 from app.api.traveler import router as traveler_router
 from app.api.restaurant import router as restaurant_router
 
+from app.api.driver import router as driver_router
+from app.api.transport import router as transport_router
+
 
 app = FastAPI(
     title="TripMate API",
@@ -15,6 +18,8 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(traveler_router)
 app.include_router(restaurant_router)
+app.include_router(driver_router)
+app.include_router(transport_router)
 
 
 @app.get("/")
