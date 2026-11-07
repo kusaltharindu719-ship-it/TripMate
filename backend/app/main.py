@@ -6,6 +6,8 @@ from app.api.restaurant import router as restaurant_router
 
 from app.api.driver import router as driver_router
 from app.api.transport import router as transport_router
+from app.api.restaurant_owner import router as restaurant_owner_router
+
 
 
 app = FastAPI(
@@ -20,7 +22,7 @@ app.include_router(traveler_router)
 app.include_router(restaurant_router)
 app.include_router(driver_router)
 app.include_router(transport_router)
-
+app.include_router(restaurant_owner_router)
 
 @app.get("/")
 def root():
