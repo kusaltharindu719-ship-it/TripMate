@@ -1,46 +1,48 @@
-import { Link } from "react-router-dom";
-import { useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { isLoggedIn, logoutUser } from "../services/api";
 
-function Navbar() {
-  const [blueTheme, setBlueTheme] = useState(false);
+export default function Navbar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const loggedIn = isLoggedIn();
+  const appPage = location.pathname.startsWith("/traveler");
 
-  const changeTheme = () => {
-    const nextTheme = !blueTheme;
-
-    setBlueTheme(nextTheme);
-
-    if (nextTheme) {
-      document.body.classList.add("blue-theme");
-    } else {
-      document.body.classList.remove("blue-theme");
-    }
-  };
+  function logout() {
+    logoutUser();
+    navigate("/login");
+  }
 
   return (
-    <nav className="navbar">
-      <Link to="/" className="logo">
-        <span className="logo-icon">T</span>
-        <span>TripMate</span>
+    <header className={`topbar ${appPage ? "topbar-app" : ""}`}>
+      <Link className="brand" to={loggedIn ? "/traveler" : "/"}>
+        <span className="brand-mark">T</span>
+        <span>
+          <strong>TripMate</strong>
+          <small>Travel Sri Lanka</small>
+        </span>
       </Link>
 
-      <div className="nav-links">
-        <Link to="/">Home</Link>
-        <Link to="/login">Login</Link>
-
-        <button
-          className="theme-btn"
-          onClick={changeTheme}
-          title="Change theme"
-        >
-          🎨
-        </button>
-
-        <Link to="/register" className="register-btn">
-          Get Started
-        </Link>
-      </div>
-    </nav>
+      <nav className="topbar-nav">
+        {!loggedIn ? (
+          <>
+            <NavLink to="/">Home</NavLink>
+            <a href="/#discover">Places</a>
+            <NavLink to="/login">Login</NavLink>
+            <NavLink className="btn btn-primary btn-sm" to="/register">
+              Get Started
+            </NavLink>
+          </>
+        ) : (
+          <>
+            <NavLink to="/traveler">Dashboard</NavLink>
+            <NavLink to="/traveler/bookings">Bookings</NavLink>
+            <NavLink to="/traveler/notifications">Updates</NavLink>
+            <button className="btn btn-ghost btn-sm" onClick={logout}>
+              Logout
+            </button>
+          </>
+        )}
+      </nav>
+    </header>
   );
 }
-
-export default Navbar;

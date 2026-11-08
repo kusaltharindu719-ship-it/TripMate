@@ -1,13 +1,12 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
 from app.api.traveler import router as traveler_router
 from app.api.restaurant import router as restaurant_router
-
 from app.api.driver import router as driver_router
 from app.api.transport import router as transport_router
 from app.api.restaurant_owner import router as restaurant_owner_router
-
 
 
 app = FastAPI(
@@ -17,12 +16,37 @@ app = FastAPI(
 )
 
 
+# =========================
+# CORS
+# =========================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# =========================
+# ROUTERS
+# =========================
+
 app.include_router(auth_router)
 app.include_router(traveler_router)
 app.include_router(restaurant_router)
 app.include_router(driver_router)
 app.include_router(transport_router)
 app.include_router(restaurant_owner_router)
+
+
+# =========================
+# ROOT
+# =========================
 
 @app.get("/")
 def root():
