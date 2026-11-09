@@ -11,6 +11,8 @@ import TripAccommodations from "./pages/TripAccommodations";
 import TripRestaurants from "./pages/TripRestaurants";
 import TripTransport from "./pages/TripTransport";
 import RoleDashboard from "./pages/RoleDashboard";
+import AccommodationDetails from "./pages/AccommodationDetails";
+import AccommodationOwnerDashboard from "./pages/AccommodationOwnerDashboard";
 
 export default function App() {
   return (
@@ -24,11 +26,12 @@ export default function App() {
         <Route path="/traveler/trips/:tripId" element={<TripDetails/>}/>
         <Route path="/traveler/trips/:tripId/preferences" element={<TripPreferences/>}/>
         <Route path="/traveler/trips/:tripId/destinations" element={<TripDestinations/>}/>
+        <Route  path="/traveler/trips/:tripId/accommodations/:accommodationId"element={<AccommodationDetails />}/>
         <Route path="/traveler/trips/:tripId/accommodations" element={<TripAccommodations/>}/>
         <Route path="/traveler/trips/:tripId/restaurants" element={<TripRestaurants/>}/>
         <Route path="/traveler/trips/:tripId/transport" element={<TripTransport/>}/>
         <Route path="/restaurant-owner" element={<RoleDashboard role="Restaurant owner" title="Restaurant operations"/>}/>
-        <Route path="/accommodation-owner" element={<RoleDashboard role="Accommodation owner" title="Accommodation operations"/>}/>
+        <Route path="/accommodation-owner" element={<AccommodationOwnerDashboard />} />
         <Route path="/driver" element={<RoleDashboard role="Driver" title="Driver workspace"/>}/>
         <Route path="/admin" element={<RoleDashboard role="Administrator" title="Platform overview"/>}/>
         <Route path="*" element={<Home/>}/>
