@@ -1,4 +1,36 @@
-import { useNavigate } from "react-router-dom";
-import Navbar from "../components/Navbar";
-import { logoutUser } from "../services/api";
-export default function RoleDashboard({role,title}){const navigate=useNavigate();const logout=()=>{logoutUser();navigate("/login")};return <div className="role-dashboard"><Navbar/><main className="role-wrap"><section className="role-hero"><div><div className="eyebrow">{role.toUpperCase()}</div><h1>{title}</h1><p>A polished TripMate operations shell ready for the role-specific endpoints in your backend.</p></div><button className="btn btn-dark" onClick={logout}>Sign out</button></section><section className="stats-grid"><article className="stat-card stat-primary"><span className="stat-icon">▣</span><div><small>Workspace</small><strong>Live</strong><p>Frontend shell connected</p></div></article><article className="stat-card"><span className="stat-icon">◉</span><div><small>API status</small><strong>Ready</strong><p>Connect role modules safely</p></div></article><article className="stat-card"><span className="stat-icon">✦</span><div><small>Design system</small><strong>1</strong><p>Shared TripMate experience</p></div></article></section><section className="content-card"><div className="card-heading"><div><div className="eyebrow">OPERATIONS</div><h2>Professional dashboard</h2></div></div><div className="module-grid"><div className="module-card static"><span className="module-icon">⌂</span><div><h3>Listings & inventory</h3><p>Connect the provider endpoints already implemented.</p></div></div><div className="module-card static"><span className="module-icon">▣</span><div><h3>Bookings & activity</h3><p>Keep operational workflows inside one interface.</p></div></div><div className="module-card static"><span className="module-icon">◉</span><div><h3>Updates</h3><p>Surface important actions without clutter.</p></div></div></div></section></main></div>}
+import React from 'react';
+import { Layers, Compass, UserCheck, Settings } from 'lucide-react';
+
+export default function RoleDashboard() {
+  return (
+    <div className="min-h-screen bg-[#0B1F33] text-white p-6 md:p-10 font-sans">
+      <div className="mb-8 border-b border-slate-700 pb-4">
+        <h1 className="text-2xl md:text-3xl font-bold text-[#21C7D9]">Role Dashboard Switcher</h1>
+        <p className="text-sm text-slate-400 mt-1">Unified access portal for multi-tier TripMate service providers.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-xl hover:border-[#14B87A] transition duration-300">
+          <UserCheck className="text-[#14B87A] mb-4" size={32} />
+          <h3 className="text-xl font-semibold mb-2">Transport Provider</h3>
+          <p className="text-xs text-slate-400 mb-4">Manage vehicle fleets, driver assignments, and live route bookings.</p>
+          <span className="text-xs text-[#14B87A] font-semibold">Active Status: Online</span>
+        </div>
+
+        <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-xl hover:border-[#21C7D9] transition duration-300">
+          <Compass className="text-[#21C7D9] mb-4" size={32} />
+          <h3 className="text-xl font-semibold mb-2">Tour Guide Portal</h3>
+          <p className="text-xs text-slate-400 mb-4">Coordinate itinerary stops, traveler group chats, and schedule updates.</p>
+          <span className="text-xs text-[#21C7D9] font-semibold">Active Status: Ready</span>
+        </div>
+
+        <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-xl hover:border-[#F4C56A] transition duration-300">
+          <Layers className="text-[#F4C56A] mb-4" size={32} />
+          <h3 className="text-xl font-semibold mb-2">Accommodation Host</h3>
+          <p className="text-xs text-slate-400 mb-4">Control room availability, check-in calendars, and guest reviews.</p>
+          <span className="text-xs text-[#F4C56A] font-semibold">Active Status: Updated</span>
+        </div>
+      </div>
+    </div>
+  );
+}
