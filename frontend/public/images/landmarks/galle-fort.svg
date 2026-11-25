@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 320" width="500" height="320" fill="none">
+  <defs>
+    <linearGradient id="galleSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="lighthouseGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f8fafc" />
+      <stop offset="60%" stop-color="#e2e8f0" />
+      <stop offset="100%" stop-color="#94a3b8" />
+    </linearGradient>
+    <linearGradient id="fortStone" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#78716c" />
+      <stop offset="50%" stop-color="#57534e" />
+      <stop offset="100%" stop-color="#292524" />
+    </linearGradient>
+  </defs>
+  <!-- Old Dutch Ramparts Wall -->
+  <path d="M40 250 L 460 230 L 480 310 L 20 310 Z" fill="url(#fortStone)" stroke="#44403c" stroke-width="2" />
+  <line x1="60" y1="270" x2="440" y2="250" stroke="#a8a29e" stroke-width="2" opacity="0.4" />
+  <line x1="80" y1="290" x2="420" y2="275" stroke="#44403c" stroke-width="2.5" />
+  <!-- Galle Lighthouse Tower -->
+  <!-- Tower Body -->
+  <path d="M228 240 L 236 85 L 264 85 L 272 240 Z" fill="url(#lighthouseGrad)" stroke="#475569" stroke-width="1.5" />
+  <!-- Red & White Bands/Windows -->
+  <line x1="234" y1="125" x2="266" y2="125" stroke="#ef4444" stroke-width="5" />
+  <rect x="246" y="150" width="8" height="12" rx="2" fill="#1e293b" />
+  <rect x="246" y="185" width="8" height="12" rx="2" fill="#1e293b" />
+  <!-- Balcony Gallery -->
+  <rect x="230" y="80" width="40" height="7" rx="2" fill="#0f172a" />
+  <line x1="232" y1="76" x2="268" y2="76" stroke="#cbd5e1" stroke-width="2" />
+  <!-- Lantern Room -->
+  <rect x="236" y="60" width="28" height="20" rx="3" fill="#38bdf8" fill-opacity="0.7" stroke="#0f172a" stroke-width="2" />
+  <!-- Dome Roof -->
+  <path d="M234 60 Q 250 42 266 60 Z" fill="#0f172a" />
+  <circle cx="250" cy="40" r="3" fill="#f59e0b" />
+  <!-- Tropical Palm Trees alongside rampart -->
+  <!-- Palm 1 (Left) -->
+  <path d="M140 250 Q 150 170 170 130" stroke="#713f12" stroke-width="5" fill="none" stroke-linecap="round" />
+  <path d="M170 130 Q 130 110 110 135" stroke="#15803d" stroke-width="4" fill="none" />
+  <path d="M170 130 Q 160 90 145 95" stroke="#16a34a" stroke-width="4" fill="none" />
+  <path d="M170 130 Q 190 95 210 110" stroke="#15803d" stroke-width="4" fill="none" />
+  <!-- Palm 2 (Right) -->
+  <path d="M360 235 Q 350 160 330 120" stroke="#713f12" stroke-width="5" fill="none" stroke-linecap="round" />
+  <path d="M330 120 Q 295 105 280 130" stroke="#15803d" stroke-width="4" fill="none" />
+  <path d="M330 120 Q 335 80 350 90" stroke="#16a34a" stroke-width="4" fill="none" />
+  <path d="M330 120 Q 365 95 385 115" stroke="#15803d" stroke-width="4" fill="none" />
+</svg>

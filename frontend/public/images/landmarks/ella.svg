@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 320" width="500" height="320" fill="none">
+  <defs>
+    <linearGradient id="ellaHill" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2d7a46" />
+      <stop offset="100%" stop-color="#144322" />
+    </linearGradient>
+    <linearGradient id="bridgeStone" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c4b5a0" />
+      <stop offset="50%" stop-color="#93846e" />
+      <stop offset="100%" stop-color="#645744" />
+    </linearGradient>
+  </defs>
+  <!-- Background Lush Ella Mountains -->
+  <path d="M10 260 Q 90 120 180 180 Q 280 90 400 170 Q 460 140 490 260 L 490 310 L 10 310 Z" fill="url(#ellaHill)" />
+  <!-- Nine Arch Bridge Viaduct Structure -->
+  <path d="M50 180 L 450 180 L 450 198 L 50 198 Z" fill="#b0a18c" stroke="#504332" stroke-width="2" />
+  <!-- Bridge Arches -->
+  <!-- Pillar 1 -->
+  <rect x="75" y="198" width="28" height="95" fill="url(#bridgeStone)" />
+  <path d="M103 240 Q 134 200 165 240 L 165 293 L 103 293 Z" fill="#0d2a16" />
+  <!-- Pillar 2 -->
+  <rect x="165" y="198" width="30" height="95" fill="url(#bridgeStone)" />
+  <path d="M195 235 Q 235 190 275 235 L 275 293 L 195 293 Z" fill="#0d2a16" />
+  <!-- Pillar 3 -->
+  <rect x="275" y="198" width="30" height="95" fill="url(#bridgeStone)" />
+  <path d="M305 240 Q 340 200 375 240 L 375 293 L 305 293 Z" fill="#0d2a16" />
+  <!-- Pillar 4 -->
+  <rect x="375" y="198" width="28" height="95" fill="url(#bridgeStone)" />
+  <!-- Top track rail -->
+  <line x1="45" y1="178" x2="455" y2="178" stroke="#483d30" stroke-width="3" />
+  <line x1="45" y1="184" x2="455" y2="184" stroke="#786c5c" stroke-width="2" />
+  <!-- Tea estate bushes foreground -->
+  <circle cx="80" cy="285" r="28" fill="#3aa35c" />
+  <circle cx="130" cy="290" r="32" fill="#22c55e" />
+  <circle cx="210" cy="295" r="28" fill="#1b522d" />
+  <circle cx="260" cy="290" r="32" fill="#2d7a46" />
+  <circle cx="340" cy="290" r="30" fill="#3aa35c" />
+  <circle cx="420" cy="285" r="30" fill="#246a3b" />
+</svg>

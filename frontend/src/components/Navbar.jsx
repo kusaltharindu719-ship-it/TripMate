@@ -15,7 +15,29 @@ export default function Navbar() {
   return (
     <header className={`topbar ${appPage ? "topbar-app" : ""}`}>
       <Link className="brand" to={loggedIn ? "/traveler" : "/"}>
-        <span className="brand-mark">T</span>
+        <span className="brand-mark" aria-label="TripMate emblem">
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9.5" strokeOpacity="0.4" strokeWidth="1.4" strokeDasharray="2.5 2.5" />
+            <polygon
+              points="12 3 14.8 9.5 21 12 14.8 14.5 12 21 9.2 14.5 3 12 9.2 9.5"
+              fill="currentColor"
+              fillOpacity="0.25"
+              stroke="currentColor"
+              strokeWidth="1.8"
+            />
+            <circle cx="12" cy="12" r="2" fill="currentColor" />
+          </svg>
+        </span>
         <span>
           <strong>TripMate</strong>
           <small>Travel Sri Lanka</small>

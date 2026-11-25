@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 320" width="500" height="320" fill="none">
+  <defs>
+    <linearGradient id="mirissaSea" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <linearGradient id="mirissaMound" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ea580c" />
+      <stop offset="50%" stop-color="#c2410c" />
+      <stop offset="100%" stop-color="#9a3412" />
+    </linearGradient>
+  </defs>
+  <!-- Ocean Background -->
+  <path d="M20 230 Q 150 215 280 230 Q 400 220 480 235 L 480 310 L 20 310 Z" fill="url(#mirissaSea)" />
+  <path d="M40 245 Q 160 235 280 248 Q 400 238 460 250" stroke="#ffffff" stroke-width="2.5" opacity="0.6" fill="none" />
+  <!-- Reddish Earth Headland Mound (Coconut Tree Hill) -->
+  <path d="M120 300 Q 250 170 380 300 Z" fill="url(#mirissaMound)" stroke="#7c2d12" stroke-width="2" />
+  <!-- Cluster of Coconut Palm Trees on the hill -->
+  <!-- Palm 1 -->
+  <path d="M220 230 Q 210 160 200 110" stroke="#78350f" stroke-width="4.5" fill="none" stroke-linecap="round" />
+  <path d="M200 110 Q 165 95 150 115" stroke="#16a34a" stroke-width="3.5" fill="none" />
+  <path d="M200 110 Q 185 75 180 85" stroke="#22c55e" stroke-width="3.5" fill="none" />
+  <path d="M200 110 Q 220 75 235 90" stroke="#15803d" stroke-width="3.5" fill="none" />
+  <!-- Palm 2 (Tall Center) -->
+  <path d="M250 220 Q 252 140 248 85" stroke="#78350f" stroke-width="5" fill="none" stroke-linecap="round" />
+  <path d="M248 85 Q 210 65 190 90" stroke="#16a34a" stroke-width="4" fill="none" />
+  <path d="M248 85 Q 235 45 225 60" stroke="#22c55e" stroke-width="4" fill="none" />
+  <path d="M248 85 Q 260 45 270 58" stroke="#22c55e" stroke-width="4" fill="none" />
+  <path d="M248 85 Q 285 70 305 95" stroke="#15803d" stroke-width="4" fill="none" />
+  <!-- Palm 3 -->
+  <path d="M280 230 Q 290 165 305 115" stroke="#78350f" stroke-width="4.5" fill="none" stroke-linecap="round" />
+  <path d="M305 115 Q 280 95 270 110" stroke="#16a34a" stroke-width="3.5" fill="none" />
+  <path d="M305 115 Q 315 80 325 90" stroke="#22c55e" stroke-width="3.5" fill="none" />
+  <path d="M305 115 Q 340 95 355 120" stroke="#15803d" stroke-width="3.5" fill="none" />
+  <!-- Golden sand foreground -->
+  <path d="M20 285 Q 250 260 480 285 L 480 310 L 20 310 Z" fill="#fef08a" opacity="0.8" />
+</svg>

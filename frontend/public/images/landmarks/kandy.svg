@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 320" width="500" height="320" fill="none">
+  <defs>
+    <linearGradient id="kandyGold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="50%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#a16207" />
+    </linearGradient>
+    <linearGradient id="kandyWall" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </linearGradient>
+    <linearGradient id="kandyRoof" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#b91c1c" />
+      <stop offset="100%" stop-color="#7f1d1d" />
+    </linearGradient>
+  </defs>
+  <!-- Lake Base Reflection -->
+  <path d="M40 270 Q 250 250 460 270 L 480 310 L 20 310 Z" fill="#0369a1" fill-opacity="0.5" />
+  <!-- Cloud Wall (Walakulu Bamma) -->
+  <path d="M50 260 Q 60 250 70 260 Q 80 250 90 260 Q 100 250 110 260 L 450 260" stroke="#f8fafc" stroke-width="4" fill="none" />
+  <!-- Main Temple Octagon Structure (Pattirippuwa) -->
+  <path d="M190 255 L 210 160 L 290 160 L 310 255 Z" fill="url(#kandyWall)" stroke="#94a3b8" stroke-width="2" />
+  <!-- Octagonal Pillars & Balconies -->
+  <line x1="210" y1="210" x2="290" y2="210" stroke="#78350f" stroke-width="3" />
+  <rect x="235" y="180" width="30" height="40" rx="3" fill="#451a03" />
+  <rect x="245" y="185" width="10" height="30" fill="#fef08a" fill-opacity="0.8" />
+  <!-- Traditional Kandyan Tiered Roof -->
+  <!-- Lower Roof Tier -->
+  <path d="M175 165 Q 250 145 325 165 L 315 155 Q 250 135 185 155 Z" fill="url(#kandyRoof)" stroke="#450a0a" stroke-width="1.5" />
+  <!-- Upper Roof Tier -->
+  <path d="M195 140 Q 250 120 305 140 L 295 125 Q 250 108 205 125 Z" fill="url(#kandyRoof)" stroke="#450a0a" stroke-width="1.5" />
+  <!-- Pinnacle / Golden Finial (Kotha) -->
+  <path d="M246 115 L 250 90 L 254 115 Z" fill="url(#kandyGold)" stroke="#78350f" stroke-width="1" />
+  <circle cx="250" cy="85" r="4" fill="url(#kandyGold)" />
+  <!-- Mountain mist and jungle backdrop -->
+  <circle cx="120" cy="240" r="45" fill="#15803d" opacity="0.85" />
+  <circle cx="380" cy="240" r="45" fill="#166534" opacity="0.85" />
+</svg>

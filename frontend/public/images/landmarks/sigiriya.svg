@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 320" width="500" height="320" fill="none">
+  <defs>
+    <linearGradient id="sigRock" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b68953" />
+      <stop offset="40%" stop-color="#8b5e34" />
+      <stop offset="80%" stop-color="#5a3d1c" />
+      <stop offset="100%" stop-color="#3c260f" />
+    </linearGradient>
+    <linearGradient id="sigJungle" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2d7a46" />
+      <stop offset="60%" stop-color="#1b522d" />
+      <stop offset="100%" stop-color="#0f341c" />
+    </linearGradient>
+    <linearGradient id="sigGold" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffe27a" />
+      <stop offset="100%" stop-color="#d4a337" />
+    </linearGradient>
+  </defs>
+  <!-- Base jungle mound -->
+  <path d="M40 280 Q 120 220 220 230 Q 340 210 460 280 L 470 310 L 30 310 Z" fill="url(#sigJungle)" />
+  <circle cx="90" cy="250" r="35" fill="#2d7a46" opacity="0.9" />
+  <circle cx="140" cy="240" r="40" fill="#246a3b" opacity="0.9" />
+  <circle cx="360" cy="240" r="42" fill="#246a3b" opacity="0.9" />
+  <circle cx="410" cy="255" r="35" fill="#1b522d" opacity="0.9" />
+  <!-- Main Sigiriya Rock monolith -->
+  <path d="M120 230 C 110 180 130 110 160 85 C 200 65 300 60 340 85 C 370 105 390 170 380 230 C 340 235 160 235 120 230 Z" fill="url(#sigRock)" stroke="#d4a337" stroke-width="1.5" stroke-opacity="0.4" />
+  <!-- Rock striations and cliff textures -->
+  <path d="M150 100 Q 250 85 350 100" stroke="#dcb17a" stroke-width="3" opacity="0.6" stroke-linecap="round" />
+  <path d="M135 140 Q 240 120 370 135" stroke="#482e14" stroke-width="4" opacity="0.8" stroke-linecap="round" />
+  <path d="M130 175 Q 260 160 375 170" stroke="#dcb17a" stroke-width="2.5" opacity="0.5" stroke-linecap="round" />
+  <path d="M125 205 Q 250 195 378 200" stroke="#38210c" stroke-width="4" opacity="0.85" stroke-linecap="round" />
+  <!-- Vertical fissures -->
+  <path d="M210 90 L 215 220" stroke="#2a1708" stroke-width="3" opacity="0.7" />
+  <path d="M280 85 L 275 225" stroke="#2a1708" stroke-width="3.5" opacity="0.7" />
+  <path d="M330 105 L 335 210" stroke="#2a1708" stroke-width="2.5" opacity="0.6" />
+  <!-- Summit foliage -->
+  <path d="M170 80 Q 185 68 205 76 Q 230 65 255 72 Q 280 62 305 70 Q 330 65 345 78 L 335 88 L 175 88 Z" fill="#3aa35c" />
+  <circle cx="210" cy="70" r="10" fill="#4ade80" opacity="0.8" />
+  <circle cx="250" cy="65" r="12" fill="#22c55e" opacity="0.9" />
+  <circle cx="290" cy="68" r="11" fill="#4ade80" opacity="0.8" />
+  <!-- Ancient Terraces at base -->
+  <rect x="220" y="215" width="60" height="12" rx="3" fill="#ffe27a" opacity="0.7" />
+  <line x1="230" y1="215" x2="230" y2="227" stroke="#8b5e34" stroke-width="2" />
+  <line x1="250" y1="215" x2="250" y2="227" stroke="#8b5e34" stroke-width="2" />
+  <line x1="270" y1="215" x2="270" y2="227" stroke="#8b5e34" stroke-width="2" />
+  <!-- Fore-jungle leaves -->
+  <circle cx="180" cy="245" r="28" fill="#1b522d" />
+  <circle cx="225" cy="255" r="32" fill="#246a3b" />
+  <circle cx="275" cy="255" r="32" fill="#2d7a46" />
+  <circle cx="320" cy="248" r="28" fill="#1b522d" />
+</svg>
